@@ -1,4 +1,4 @@
-# 🌊 Waveguide Simulator - Ambiente de Distribuição
+# Waveguide Simulator - Ambiente de Distribuição
 
 ## 📦 **Pacote Completo para Execução**
 
