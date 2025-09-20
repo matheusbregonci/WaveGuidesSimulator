@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pdflatex:*)",
+      "Read(//c/Users/matheus.pires/Desktop/IC - TE/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,0 +1,44 @@
+\babel@toc {portuguese}{}\relax 
+\contentsline {section}{\numberline {1}Introdução}{3}{section.1}%
+\contentsline {section}{\numberline {2}Fundamentos Teóricos}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Equações de Maxwell em Coordenadas Cilíndricas}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Modos de Propagação}{3}{subsection.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.1}Modos Transversais Elétricos (TE)}{3}{subsubsection.2.2.1}%
+\contentsline {subsubsection}{\numberline {2.2.2}Modos Transversais Magnéticos (TM)}{3}{subsubsection.2.2.2}%
+\contentsline {subsection}{\numberline {2.3}Condições de Contorno e Frequências de Corte}{4}{subsection.2.3}%
+\contentsline {subsubsection}{\numberline {2.3.1}Modos TE}{4}{subsubsection.2.3.1}%
+\contentsline {subsubsection}{\numberline {2.3.2}Modos TM}{4}{subsubsection.2.3.2}%
+\contentsline {subsection}{\numberline {2.4}Frequências de Corte}{4}{subsection.2.4}%
+\contentsline {section}{\numberline {3}Propagação e Impedâncias}{4}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Constante de Propagação}{4}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Impedância Característica}{4}{subsection.3.2}%
+\contentsline {subsubsection}{\numberline {3.2.1}Modos TE}{4}{subsubsection.3.2.1}%
+\contentsline {subsubsection}{\numberline {3.2.2}Modos TM}{5}{subsubsection.3.2.2}%
+\contentsline {section}{\numberline {4}Coeficientes de Reflexão e Transmissão}{5}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Descontinuidades em Guias Cilíndricos}{5}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Coeficiente de Reflexão}{5}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Coeficiente de Transmissão}{5}{subsection.4.3}%
+\contentsline {section}{\numberline {5}Matriz de Espalhamento}{5}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Definição da Matriz S}{5}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Interpretação Física}{5}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Propriedades da Matriz S}{6}{subsection.5.3}%
+\contentsline {subsubsection}{\numberline {5.3.1}Conservação de Energia}{6}{subsubsection.5.3.1}%
+\contentsline {subsubsection}{\numberline {5.3.2}Reciprocidade}{6}{subsubsection.5.3.2}%
+\contentsline {section}{\numberline {6}Cálculo Prático dos Parâmetros S}{6}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Modelo de Cavidade Ressonante}{6}{subsection.6.1}%
+\contentsline {subsubsection}{\numberline {6.1.1}S11 - Reflexão}{6}{subsubsection.6.1.1}%
+\contentsline {subsubsection}{\numberline {6.1.2}S21 - Transmissão}{6}{subsubsection.6.1.2}%
+\contentsline {subsection}{\numberline {6.2}Efeitos de Múltiplos Modos}{6}{subsection.6.2}%
+\contentsline {section}{\numberline {7}Implementação Computacional}{7}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Algoritmo para Cálculo de S11}{7}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Algoritmo para Cálculo de S21}{7}{subsection.7.2}%
+\contentsline {section}{\numberline {8}Validação e Comparação}{7}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Casos Limites}{7}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Verificações Numéricas}{7}{subsection.8.2}%
+\contentsline {section}{\numberline {9}Aplicações Práticas}{7}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Design de Filtros}{7}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Análise de Antenas}{8}{subsection.9.2}%
+\contentsline {section}{\numberline {10}Conclusões}{8}{section.10}%
+\contentsline {section}{\numberline {11}Referências}{8}{section.11}%
+\contentsline {section}{\numberline {A}Tabela de Zeros das Funções de Bessel}{8}{appendix.A}%
+\contentsline {section}{\numberline {B}Código de Implementação}{9}{appendix.B}%

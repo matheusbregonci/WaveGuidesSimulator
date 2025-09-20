@@ -1,0 +1,347 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[portuguese]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage{enumerate}
+\usepackage{hyperref}
+\usepackage{array}
+\usepackage{booktabs}
+
+\geometry{margin=2.5cm}
+
+\title{Reflexão e Transmissão em Guias de Onda Cilíndricas:\\
+Teoria e Matriz de Espalhamento}
+\author{Simulador de Guias de Onda}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+\section{Introdução}
+
+Os guias de onda cilíndricos são estruturas fundamentais em sistemas de microondas e telecomunicações. Este documento apresenta a teoria completa para análise de reflexão e transmissão nestes guias, desenvolvendo a formulação matemática necessária para cálculo da matriz de espalhamento.
+
+\section{Fundamentos Teóricos}
+
+\subsection{Equações de Maxwell em Coordenadas Cilíndricas}
+
+Para um guia cilíndrico de raio $a$, as equações de Maxwell em coordenadas cilíndricas ($\rho$, $\phi$, $z$) são:
+
+\begin{align}
+\nabla \times \vec{E} &= -j\omega\mu \vec{H} \\
+\nabla \times \vec{H} &= j\omega\epsilon \vec{E}
+\end{align}
+
+onde $\omega = 2\pi f$ é a frequência angular, $\mu$ a permeabilidade e $\epsilon$ a permissividade do meio.
+
+\subsection{Modos de Propagação}
+
+Em guias cilíndricos, existem dois tipos fundamentais de modos:
+
+\subsubsection{Modos Transversais Elétricos (TE)}
+Para modos TE, $E_z = 0$ e o campo magnético longitudinal é dado por:
+
+\begin{equation}
+H_z(\rho,\phi,z) = A_{nm} J_n(k_c\rho) \cos(n\phi + \phi_0) e^{-j\beta z}
+\end{equation}
+
+onde:
+\begin{itemize}
+    \item $J_n$ é a função de Bessel de primeira espécie de ordem $n$
+    \item $k_c$ é o número de onda de corte
+    \item $\beta$ é a constante de propagação
+    \item $A_{nm}$ é a amplitude do modo
+\end{itemize}
+
+\subsubsection{Modos Transversais Magnéticos (TM)}
+Para modos TM, $H_z = 0$ e o campo elétrico longitudinal é:
+
+\begin{equation}
+E_z(\rho,\phi,z) = B_{nm} J_n(k_c\rho) \cos(n\phi + \phi_0) e^{-j\beta z}
+\end{equation}
+
+\subsection{Condições de Contorno e Frequências de Corte}
+
+\subsubsection{Modos TE}
+A condição de contorno na parede metálica ($\rho = a$) requer:
+\begin{equation}
+\frac{\partial J_n(k_c a)}{\partial \rho} = 0
+\end{equation}
+
+Isso resulta em:
+\begin{equation}
+k_{c,nm}^{(TE)} = \frac{p'_{nm}}{a}
+\end{equation}
+
+onde $p'_{nm}$ são os zeros da derivada da função de Bessel $J'_n(p'_{nm}) = 0$.
+
+\subsubsection{Modos TM}
+Para modos TM, a condição de contorno é:
+\begin{equation}
+J_n(k_c a) = 0
+\end{equation}
+
+Resultando em:
+\begin{equation}
+k_{c,nm}^{(TM)} = \frac{p_{nm}}{a}
+\end{equation}
+
+onde $p_{nm}$ são os zeros da função de Bessel $J_n(p_{nm}) = 0$.
+
+\subsection{Frequências de Corte}
+A frequência de corte para cada modo é:
+\begin{equation}
+f_c = \frac{k_c c}{2\pi\sqrt{\epsilon_r \mu_r}}
+\end{equation}
+
+onde $c$ é a velocidade da luz no vácuo.
+
+\section{Propagação e Impedâncias}
+
+\subsection{Constante de Propagação}
+Para frequências acima do corte ($f > f_c$):
+\begin{equation}
+\beta = \sqrt{k^2 - k_c^2}
+\end{equation}
+
+onde $k = \omega\sqrt{\mu\epsilon}$ é o número de onda no meio.
+
+\subsection{Impedância Característica}
+
+\subsubsection{Modos TE}
+\begin{equation}
+Z_{TE} = \frac{\omega\mu}{\beta} = \frac{\eta}{\sqrt{1 - (f_c/f)^2}}
+\end{equation}
+
+\subsubsection{Modos TM}
+\begin{equation}
+Z_{TM} = \frac{\beta}{\omega\epsilon} = \eta\sqrt{1 - (f_c/f)^2}
+\end{equation}
+
+onde $\eta = \sqrt{\mu/\epsilon}$ é a impedância intrínseca do meio.
+
+\section{Coeficientes de Reflexão e Transmissão}
+
+\subsection{Descontinuidades em Guias Cilíndricos}
+
+Quando uma onda encontra uma descontinuidade (mudança de raio, material, etc.), parte da energia é refletida e parte é transmitida.
+
+\subsection{Coeficiente de Reflexão}
+Para uma descontinuidade entre dois guias com impedâncias $Z_1$ e $Z_2$:
+
+\begin{equation}
+\Gamma = \frac{Z_2 - Z_1}{Z_2 + Z_1}
+\end{equation}
+
+\subsection{Coeficiente de Transmissão}
+\begin{equation}
+T = \frac{2Z_2}{Z_2 + Z_1} = 1 + \Gamma
+\end{equation}
+
+\section{Matriz de Espalhamento}
+
+\subsection{Definição da Matriz S}
+A matriz de espalhamento relaciona as ondas incidentes e refletidas:
+
+\begin{equation}
+\begin{bmatrix}
+b_1 \\
+b_2
+\end{bmatrix} =
+\begin{bmatrix}
+S_{11} & S_{12} \\
+S_{21} & S_{22}
+\end{bmatrix}
+\begin{bmatrix}
+a_1 \\
+a_2
+\end{bmatrix}
+\end{equation}
+
+onde:
+\begin{itemize}
+    \item $a_i$: ondas incidentes normalizadas
+    \item $b_i$: ondas refletidas/transmitidas normalizadas
+    \item $S_{ij}$: parâmetros de espalhamento
+\end{itemize}
+
+\subsection{Interpretação Física}
+\begin{align}
+S_{11} &= \text{coeficiente de reflexão na porta 1} \\
+S_{21} &= \text{coeficiente de transmissão da porta 1 para 2} \\
+S_{12} &= \text{coeficiente de transmissão da porta 2 para 1} \\
+S_{22} &= \text{coeficiente de reflexão na porta 2}
+\end{align}
+
+\subsection{Propriedades da Matriz S}
+
+\subsubsection{Conservação de Energia}
+Para um sistema sem perdas:
+\begin{equation}
+|S_{11}|^2 + |S_{21}|^2 = 1
+\end{equation}
+\begin{equation}
+|S_{22}|^2 + |S_{12}|^2 = 1
+\end{equation}
+
+\subsubsection{Reciprocidade}
+Para sistemas recíprocos:
+\begin{equation}
+S_{12} = S_{21}
+\end{equation}
+
+\section{Cálculo Prático dos Parâmetros S}
+
+\subsection{Modelo de Cavidade Ressonante}
+Para uma cavidade cilíndrica de comprimento $L$, os parâmetros S podem ser calculados considerando:
+
+\subsubsection{S11 - Reflexão}
+\begin{equation}
+S_{11} = \frac{Z_{in} - Z_0}{Z_{in} + Z_0}
+\end{equation}
+
+onde $Z_{in}$ é a impedância de entrada da cavidade e $Z_0$ a impedância de referência.
+
+\subsubsection{S21 - Transmissão}
+Para uma cavidade com acoplamento fraco:
+\begin{equation}
+S_{21} = \frac{2\sqrt{Q_{e1}Q_{e2}}}{Q_L} \cdot \frac{1}{1 + 2jQ_L\frac{\Delta f}{f_0}}
+\end{equation}
+
+onde:
+\begin{itemize}
+    \item $Q_{e1}, Q_{e2}$: fatores de qualidade externos
+    \item $Q_L$: fator de qualidade carregado
+    \item $\Delta f = f - f_0$: desvio da frequência de ressonância
+\end{itemize}
+
+\subsection{Efeitos de Múltiplos Modos}
+Em guias cilíndricos, múltiplos modos podem se propagar simultaneamente. O parâmetro S total é:
+
+\begin{equation}
+S_{total} = \sum_{n,m} S_{nm} \cdot \text{peso}_{nm}
+\end{equation}
+
+onde o peso depende da excitação e acoplamento de cada modo.
+
+\section{Implementação Computacional}
+
+\subsection{Algoritmo para Cálculo de S11}
+\begin{enumerate}
+    \item Calcular frequências de ressonância para todos os modos relevantes
+    \item Para cada frequência de análise:
+    \begin{enumerate}
+        \item Identificar modos próximos à ressonância
+        \item Calcular contribuição de cada modo
+        \item Somar contribuições ponderadas
+    \end{enumerate}
+    \item Aplicar conservação de energia e reciprocidade
+\end{enumerate}
+
+\subsection{Algoritmo para Cálculo de S21}
+\begin{enumerate}
+    \item Usar modelo de ressonador acoplado
+    \item Considerar perdas e acoplamento entre portas
+    \item Garantir $|S_{11}|^2 + |S_{21}|^2 \leq 1$
+\end{enumerate}
+
+\section{Validação e Comparação}
+
+\subsection{Casos Limites}
+\begin{itemize}
+    \item Guia infinito: $S_{11} = 0$, $S_{21} = e^{-j\beta L}$
+    \item Curto-circuito: $S_{11} = -1$, $S_{21} = 0$
+    \item Circuito aberto: $S_{11} = 1$, $S_{21} = 0$
+\end{itemize}
+
+\subsection{Verificações Numéricas}
+\begin{equation}
+\text{Verificar: } |S_{11}|^2 + |S_{21}|^2 \leq 1
+\end{equation}
+
+\section{Aplicações Práticas}
+
+\subsection{Design de Filtros}
+Os parâmetros S permitem:
+\begin{itemize}
+    \item Otimização de frequências de ressonância
+    \item Controle de largura de banda
+    \item Ajuste de acoplamento entre cavidades
+\end{itemize}
+
+\subsection{Análise de Antenas}
+\begin{itemize}
+    \item Cálculo de impedância de entrada
+    \item Análise de casamento de impedância
+    \item Determinação de eficiência de radiação
+\end{itemize}
+
+\section{Conclusões}
+
+A teoria apresentada fornece uma base sólida para análise de guias cilíndricos. A implementação computacional dos parâmetros S permite:
+
+\begin{itemize}
+    \item Análise precisa de reflexão e transmissão
+    \item Design otimizado de componentes de microondas
+    \item Validação experimental de modelos teóricos
+\end{itemize}
+
+\section{Referências}
+
+\begin{enumerate}
+    \item Pozar, D. M. \textit{Microwave Engineering}, 4th Edition, Wiley, 2012.
+    \item Collin, R. E. \textit{Foundations for Microwave Engineering}, 2nd Edition, McGraw-Hill, 1992.
+    \item Ramo, S., Whinnery, J. R., Van Duzer, T. \textit{Fields and Waves in Communication Electronics}, Wiley, 1994.
+    \item Harrington, R. F. \textit{Time-Harmonic Electromagnetic Fields}, McGraw-Hill, 1961.
+\end{enumerate}
+
+\appendix
+
+\section{Tabela de Zeros das Funções de Bessel}
+
+\begin{table}[H]
+\centering
+\caption{Primeiros zeros $p_{nm}$ de $J_n(x) = 0$}
+\begin{tabular}{cccc}
+\toprule
+$n$ & $m=1$ & $m=2$ & $m=3$ \\
+\midrule
+0 & 2.405 & 5.520 & 8.654 \\
+1 & 3.832 & 7.016 & 10.174 \\
+2 & 5.135 & 8.417 & 11.620 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Primeiros zeros $p'_{nm}$ de $J'_n(x) = 0$}
+\begin{tabular}{cccc}
+\toprule
+$n$ & $m=1$ & $m=2$ & $m=3$ \\
+\midrule
+0 & 1.841 & 7.016 & 10.174 \\
+1 & 3.832 & 5.331 & 8.536 \\
+2 & 3.054 & 6.706 & 9.970 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Código de Implementação}
+
+O código para implementação prática dos conceitos apresentados está disponível nos modelos Python do simulador, especificamente nos arquivos:
+\begin{itemize}
+    \item \texttt{Cilindrico\_model.py}: Implementação dos modos cilíndricos
+    \item \texttt{Scattering\_model.py}: Cálculo da matriz de espalhamento
+\end{itemize}
+
+\end{document}
