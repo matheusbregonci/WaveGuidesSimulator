@@ -122,4 +122,4 @@ Para dúvidas ou problemas:
 3. Certifique-se de ter conexão à internet para instalar dependências
 
 ---
-**🌊 Simulador de Guias de Onda Eletromagnéticas - Claude Code Edition**
+**Simulador de Guias de Onda Eletromagnéticas**
