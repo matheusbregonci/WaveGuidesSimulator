@@ -10,6 +10,7 @@ from pathlib import Path
 # Configuração de paths
 current_dir = Path(__file__).parent
 src_dir = current_dir / "src"
+src_models_dir = src_dir / "models"
 models_dir = current_dir / "models"
 
 # Função para adicionar path se não existir
@@ -22,6 +23,7 @@ def add_to_path(path):
 if src_dir.exists():
     print("Usando nova estrutura...")
     add_to_path(src_dir)
+    add_to_path(src_models_dir)  # Adicionar pasta models também
     try:
         from apps.app_streamlit_melhorias import main
         main()

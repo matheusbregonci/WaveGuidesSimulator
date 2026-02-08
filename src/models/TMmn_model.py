@@ -127,7 +127,11 @@ class Modo_TMmn():
     def H_y(self):
         const = -1*self.omega*self.epsilon*self.m*self.pi/(self.largura*self.k_c**2)
         return const*self.B*self.cos_mx*self.cos_ny*self.expz
-    
+
+    def H_z(self):
+        # Hz = 0 para modo TM
+        return np.zeros_like(self.sen_mx)
+
     def calcula_campos(self):
         self.Ex = np.real(self.E_x())
         self.Ey = np.real(self.E_y())

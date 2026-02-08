@@ -1,6 +1,15 @@
 import streamlit as st
 from TEmn_model import Modo_TEmn
 from Cilindrico_model import Modo_Cilindrico
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'models'))
+import importlib.util
+spec = importlib.util.spec_from_file_location("cavity_model",
+    os.path.join(os.path.dirname(__file__), '..', 'models', '3d_cavity_wall_model.py'))
+cavity_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(cavity_module)
+CavityWall3D = cavity_module.CavityWall3D
 # from streamlit_ace import st_ace
 # from scattering_model import calcula_coeficientes_S, calcula_campo_TE10
 import plotly.graph_objects as go
@@ -169,9 +178,18 @@ def guia_retangular():
             )
             TEmn.calcula_campos()
             state['TEmn'] = TEmn
+
+            # Salvar parâmetros para uso em outras tabs
+            state['largura_guia'] = largura_guia
+            state['altura_guia'] = altura_guia
+            state['frequencia_onda'] = frequencia_onda
+            state['permissividade_meio'] = permissividade_meio
+            state['permeabilidade_meio'] = permeabilidade_meio
+
             st.success("Parâmetros aplicados com sucesso!")
 
     with tab2:
+        st.subheader("Visualização de Campo 3D - Plano Único")
         if st.button("Plotar Campo 3D"):
             if 'TEmn' not in state:
                 st.warning("Por favor, aplique os parâmetros primeiro na aba Parâmetros")
@@ -209,6 +227,115 @@ def guia_retangular():
 
                 # Exibir o gráfico no Streamlit
                 st.plotly_chart(fig, use_container_width=False)
+
+        st.divider()
+
+        st.subheader("Animação 3D da Cavidade - Visualização nas Paredes")
+        st.write("Esta visualização mostra a intensidade do campo nas paredes da cavidade tridimensional.")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            campo_cavidade = st.selectbox("Campo (Cavidade)", ["magnetico", "eletrico"], key="campo_cavidade")
+            tipo_intensidade = st.selectbox(
+                "Tipo de Intensidade",
+                ["direcional", "total", "perpendicular"],
+                key="tipo_intensidade",
+                help="Direcional: componente específica | Total: magnitude total | Perpendicular: componente perpendicular à parede"
+            )
+
+        with col2:
+            direcao_vetor = st.selectbox(
+                "Direção do Vetor",
+                ["x", "y", "z"],
+                key="direcao_vetor",
+                help="Direção da componente quando tipo_intensidade='direcional'"
+            )
+            resolucao_cavidade = st.slider(
+                "Resolução",
+                min_value=10,
+                max_value=50,
+                value=25,
+                step=5,
+                key="resolucao_cavidade",
+                help="Número de pontos por dimensão (valores menores = mais rápido)"
+            )
+
+        col3, col4 = st.columns(2)
+
+        with col3:
+            num_frames = st.slider(
+                "Número de Frames",
+                min_value=10,
+                max_value=100,
+                value=60,
+                step=10,
+                key="num_frames",
+                help="Número de frames na animação"
+            )
+
+        with col4:
+            duracao_frame = st.slider(
+                "Duração do Frame (ms)",
+                min_value=50,
+                max_value=500,
+                value=100,
+                step=50,
+                key="duracao_frame",
+                help="Duração de cada frame em milissegundos"
+            )
+
+        profundidade_cavidade = st.number_input(
+            "Profundidade da Cavidade (mm)",
+            value=100.0,
+            step=10.0,
+            key="profundidade_cavidade",
+            help="Profundidade da cavidade na direção Z"
+        )
+
+        if st.button("Gerar Animação 3D da Cavidade"):
+            if 'TEmn' not in state:
+                st.warning("Por favor, aplique os parâmetros primeiro na aba Parâmetros")
+            else:
+                with st.spinner("Gerando animação 3D da cavidade... Isso pode levar alguns instantes."):
+                    try:
+                        # Recuperar parâmetros do state
+                        largura_guia = state.get('largura_guia', 22.86)
+                        altura_guia = state.get('altura_guia', 10.16)
+                        frequencia_onda = state.get('frequencia_onda', 12.0)
+                        permissividade_meio = state.get('permissividade_meio', 1.0)
+                        permeabilidade_meio = state.get('permeabilidade_meio', 1.0)
+
+                        # Criar instância da CavityWall3D
+                        cavity = CavityWall3D(
+                            largura=largura_guia,
+                            altura=altura_guia,
+                            profundidade=profundidade_cavidade,
+                            frequencia=frequencia_onda * 1e9,
+                            permissividade=permissividade_meio,
+                            permeabilidade=permeabilidade_meio,
+                            resolucao=resolucao_cavidade,
+                            m=1,  # Modo m
+                            n=0   # Modo n
+                        )
+
+                        # Gerar a animação
+                        fig = cavity.animar_cavidade_plotly(
+                            campo=campo_cavidade,
+                            tipo_intensidade=tipo_intensidade,
+                            direcao_vetor=direcao_vetor,
+                            num_frames=num_frames,
+                            duracao_frame=duracao_frame
+                        )
+
+                        # Exibir a animação
+                        st.plotly_chart(fig, use_container_width=True)
+                        st.success("Animação 3D da cavidade gerada com sucesso!")
+
+                    except Exception as e:
+                        st.error(f"Erro ao gerar animação 3D da cavidade: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
 
     with tab4:
         col1, col2 = st.columns(2)

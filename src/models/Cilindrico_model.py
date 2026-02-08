@@ -20,8 +20,8 @@ class Modo_Cilindrico():
         self.n = n  # Número do modo
         self.raio = raio  # Raio do cilindro (m)
         self.frequencia = frequencia  # Frequência (Hz)
-        self.mu =  permeabilidade # Permissividade relativa 
-        self.epsilon = permissividade # Permeabilidade relativa
+        self.mu = permissividade  # Permissividade relativa
+        self.epsilon = permeabilidade  # Permeabilidade relativa
         self.A = 1  # Amplitude
         self.B = 1  # Amplitude
         self.pi = np.pi
@@ -55,15 +55,14 @@ class Modo_Cilindrico():
             raise ValueError(f"Coluna inválida: {coluna}. Deve ser 1, 2 ou 3.")
 
         # Retorna o valor correspondente
-        print(f"Obtendo P'_{n}{coluna+1} = {pnm_tabela[n][coluna]}")  
         return pnm_tabela[n][coluna]
 
     def obter_pnm_prime(self, n, coluna):
         # Tabela de valores de P'_nm
         pnm_tabela = {
         #   n   m=1,   m=2,    m=3
-            0: [1.841, 7.016, 10.174],  # n = 0
-            1: [3.832, 5.331, 8.536],   # n = 1
+            0: [3.832, 7.016, 10.174],  # n = 0
+            1: [1.841, 5.331, 8.536],   # n = 1
             2: [3.054, 6.706, 9.970]    # n = 2
         }
         
@@ -74,10 +73,8 @@ class Modo_Cilindrico():
         # Verifica se a coluna é válida (1, 2 ou 3)
         if coluna < 0 or coluna > 2:
             raise ValueError(f"Coluna inválida: {coluna}. Deve ser 1, 2 ou 3.")
-        
 
         # Retorna o valor correspondente
-        print(f"Obtendo P'_{n}{coluna+1} = {pnm_tabela[n][coluna]}")  # Linha de debug
         return pnm_tabela[n][coluna]    
     
     def cosseno_Nphi(self, phi):
@@ -146,14 +143,14 @@ class Modo_Cilindrico():
         return np.real(const*(self.A*cosseno - self.B*seno)*jv_n*self.exp_z_val)
     
     def TM_H_rho(self, rho, phi):
-        const = 1j*self.omega_0*self.epsilon*self.n/((self.k_c_val_tm**2)*rho)
+        const = 1j*self.omega_0*self.mu/((self.k_c_val_tm**2)*rho)
         seno = self.seno_Nphi(phi)
         cosseno = self.cosseno_Nphi(phi)
         jv_n = self.jv_n(rho)
         return np.real(const*(self.A*cosseno-self.B*seno)*jv_n*self.exp_z_val)
 
     def TM_H_phi(self, rho, phi):
-        const = -1j*self.omega_0*self.epsilon/self.k_c_val_tm
+        const = -1j*self.omega_0*self.mu/self.k_c_val_tm
         seno = self.seno_Nphi(phi)
         cosseno = self.cosseno_Nphi(phi)
         jv_n = self.jv_n_prime(rho)
@@ -628,31 +625,32 @@ class Modo_Cilindrico():
         fig.write_html("plot_aneis_empilhados.html")
         return fig
 
+
 if __name__ == "__main__":
     # # Criar a instância e o meshgrid como antes
-    Modo_Cilindrico = Modo_Cilindrico(raio=0.0015, frequencia=15e9, permissividade=1, permeabilidade=1, n=0, m=2, z=0.25)
+    Modo_Cilindrico = Modo_Cilindrico(raio=0.0015, frequencia=15e9, permissividade=1, permeabilidade=1, n=1, m=1, z=0.25)
     X, Y, Rho, Phi = Modo_Cilindrico.criar_meshgrid_cartesiano()
 
     # # Exemplos de uso das novas funções de animação por fase:
 
-    # 1. Animação interativa (visualização em tempo real)
+    # # 1. Animação interativa (visualização em tempo real)
     # Modo_Cilindrico.plot_vetores_de_campo_fase_animado(X, Y, Rho, Phi, transversal='TE', campo='eletrico', frames=60, interval=100, z_fixo=1)
 
-    # # 2. Salvar como GIF
+    # # # 2. Salvar como GIF
     # Modo_Cilindrico.salvar_animacao_gif(X, Y, Rho, Phi, transversal='TM', campo='eletrico',
     #                                    frames=40, interval=120, z_fixo=0.25, nome_arquivo='TM_eletrico_fase.gif')
 
     # # # 3. Animação do campo magnético TM
-    # Modo_Cilindrico.salvar_animacao_gif(X, Y, Rho, Phi, transversal='TM', campo='magnetico',
-    #                                    frames=60, interval=85, z_fixo=0.25, nome_arquivo='TM_magnetico_fase.gif')
-
-    # # 3. Animação do campo magnético TM
-    Modo_Cilindrico.salvar_animacao_gif(X, Y, Rho, Phi, transversal='TM', campo='magnetico',
-                                       frames=30, interval=85, z_fixo=0.25, nome_arquivo='TE_magnetico_fase.gif')
-
-    # # 3. Animação do campo magnético TM
     Modo_Cilindrico.salvar_animacao_gif(X, Y, Rho, Phi, transversal='TM', campo='eletrico',
-                                       frames=40, interval=120, z_fixo=0.25, nome_arquivo='TE_eletrico_fase.gif')
+                                       frames=60, interval=85, z_fixo=0.25, nome_arquivo='TM_magnetico_fase.gif')
+
+    # # 3. Animação do campo magnético TM
+    # Modo_Cilindrico.salvar_animacao_gif(X, Y, Rho, Phi, transversal='TE', campo='magnetico',
+    #                                    frames=40, interval=120, z_fixo=0.25, nome_arquivo='TE_magnetico_fase.gif')
+
+    # # # 3. Animação do campo magnético TM
+    # Modo_Cilindrico.salvar_animacao_gif(X, Y, Rho, Phi, transversal='TE', campo='eletrico',
+    #                                    frames=40, interval=120, z_fixo=0.25, nome_arquivo='TE_eletrico_fase.gif')
 
     # # Funções antigas ainda funcionam:
     # Modo_Cilindrico.plot_vetores_de_campo_animado(X, Y, Rho, Phi, transversal='TM', campo='magnetico', frames=50, interval=200)

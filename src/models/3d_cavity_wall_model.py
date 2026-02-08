@@ -1,4 +1,10 @@
+import sys
+import os
+# Adicionar o diretório models ao path para imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from TEmn_model import Modo_TEmn
+from TMmn_model import Modo_TMmn
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -10,13 +16,12 @@ from plotly.subplots import make_subplots
 import plotly.express as px
 from PIL import Image
 import io
-import os
 import tempfile
 
 class CavityWall3D:
     def __init__(self, largura=22.86, altura=10.16, profundidade=None,
                  frequencia=12*10**9, permissividade=1, permeabilidade=1,
-                 resolucao=25, m=1, n=0):
+                 resolucao=25, m=1, n=0, tipo_modo='TE'):
         """
         Classe para visualização 3D da cavidade com intensidade de campo nas paredes.
 
@@ -27,7 +32,7 @@ class CavityWall3D:
         altura : float
             Altura da cavidade em mm
         profundidade : float, optional
-            Profundidade da cavidade em mm. Se None, usa o valor padrão do Modo_TEmn
+            Profundidade da cavidade em mm. Se None, usa o valor padrão do modo
         frequencia : float
             Frequência em Hz
         permissividade : float
@@ -40,6 +45,8 @@ class CavityWall3D:
             Número de modos na direção x (largura) - padrão: 1
         n : int, optional
             Número de modos na direção y (altura) - padrão: 0
+        tipo_modo : str, optional
+            Tipo de modo: 'TE' para TEmn ou 'TM' para TMmn (padrão: 'TE')
         """
         self.largura = largura
         self.altura = altura
@@ -48,11 +55,19 @@ class CavityWall3D:
         self.permeabilidade = permeabilidade
         self.m = m
         self.n = n
+        self.resolucao = resolucao
+        self.tipo_modo = tipo_modo.upper()  # Garantir uppercase
 
-        # Criar instâncias do Modo_TEmn para cada plano
-        self.modo_xy = Modo_TEmn(largura, altura, frequencia, permissividade, permeabilidade, 'xy')
-        self.modo_xz = Modo_TEmn(largura, altura, frequencia, permissividade, permeabilidade, 'xz')
-        self.modo_yz = Modo_TEmn(largura, altura, frequencia, permissividade, permeabilidade, 'yz')
+        # Selecionar a classe de modo apropriada
+        if self.tipo_modo == 'TM':
+            ModoClass = Modo_TMmn
+        else:  # Padrão é TE
+            ModoClass = Modo_TEmn
+
+        # Criar instâncias do modo apropriado para cada plano
+        self.modo_xy = ModoClass(largura, altura, frequencia, permissividade, permeabilidade, 'xy')
+        self.modo_xz = ModoClass(largura, altura, frequencia, permissividade, permeabilidade, 'xz')
+        self.modo_yz = ModoClass(largura, altura, frequencia, permissividade, permeabilidade, 'yz')
 
         # Configurar resolução e modos para todos os planos
         for modo in [self.modo_xy, self.modo_xz, self.modo_yz]:
@@ -1225,24 +1240,23 @@ class CavityWall3D:
         # Configurar layout
         fig.update_layout(
             title=f'Animação 3D - Campo {campo.capitalize()} ({tipo_intensidade}) - Modo TE{self.m}{self.n}',
+            paper_bgcolor='rgba(0,0,0,0)',  # Fundo transparente
+            plot_bgcolor='rgba(0,0,0,0)',   # Fundo transparente
+            autosize=True,  # Ocupa toda largura disponível
             scene=dict(
                 xaxis_title='X (m)',
                 yaxis_title='Z (m)',
                 zaxis_title='Y (m)',
                 camera=dict(
-                    eye=dict(x=0.06, y=0.08, z=0.04)  # Valores menores = mais zoom
+                    eye=dict(x=1.8, y=1.8, z=1.2)  # Posição da câmera para visualização adequada
                 ),
-                aspectmode='manual',
-                aspectratio=dict(
-                    x=largura_m,
-                    y=altura_m,
-                    z=profundidade_m
-                ),
-                xaxis=dict(showbackground=True, backgroundcolor="rgb(230, 230,230)"),
-                yaxis=dict(showbackground=True, backgroundcolor="rgb(230, 230,230)"),
-                zaxis=dict(showbackground=True, backgroundcolor="rgb(230, 230,230)")
+                aspectmode='data',
+                bgcolor='rgba(0,0,0,0)',  # Fundo da cena 3D transparente
+                xaxis=dict(showbackground=False),
+                yaxis=dict(showbackground=False),
+                zaxis=dict(showbackground=False)
             ),
-            margin=dict(l=20, r=20, t=60, b=20),
+            margin=dict(l=0, r=0, t=40, b=0),
             updatemenus=[{
                 'type': 'buttons',
                 'buttons': [
@@ -1539,55 +1553,690 @@ class CavityWall3D:
 
         return nome_arquivo
 
+    def _criar_modo_volumetrico_3d(self, resolucao_volume=15, fase_temporal=0):
+        """
+        Cria uma instância do Modo_TEmn configurada para calcular campos em volume 3D.
+
+        Parameters:
+        -----------
+        resolucao_volume : int
+            Número de pontos por dimensão no volume
+        fase_temporal : float
+            Fase temporal em radianos
+
+        Returns:
+        --------
+        Modo_TEmn : Instância configurada para volume 3D
+        """
+        # Criar uma nova instância para calcular campos volumétricos
+        modo_volume = Modo_TEmn(
+            largura=self.largura,
+            altura=self.altura,
+            frequencia=self.frequencia,
+            permissividade=self.permissividade,
+            permeabilidade=self.permeabilidade,
+            plano='xy'  # Usamos xy como base e depois criamos malha 3D
+        )
+
+        # Configurar parâmetros
+        modo_volume.pontos_por_dimensao = resolucao_volume
+        modo_volume.m = self.m
+        modo_volume.n = self.n
+        modo_volume.profundidade = self.profundidade / 1000  # converter para metros
+
+        # Criar malha 3D personalizada
+        largura_m = self.largura / 1000
+        altura_m = self.altura / 1000
+        profundidade_m = self.profundidade / 1000
+
+        x = np.linspace(0, largura_m, resolucao_volume)
+        y = np.linspace(0, altura_m, resolucao_volume)
+        z = np.linspace(0, profundidade_m, resolucao_volume)
+        X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+
+        # Substituir as coordenadas
+        modo_volume.x = X
+        modo_volume.y = Y
+        modo_volume.z = Z
+
+        # Recalcular funções trigonométricas e exponenciais
+        modo_volume.cos_mx = modo_volume.cosseno_x()
+        modo_volume.cos_ny = modo_volume.cosseno_y()
+        modo_volume.sen_mx = modo_volume.seno_x()
+        modo_volume.sen_ny = modo_volume.seno_y()
+        modo_volume.expz = modo_volume.exp_z()
+
+        # Aplicar fase temporal se especificada
+        if fase_temporal != 0:
+            fase_complexa = np.exp(1j * fase_temporal)
+            modo_volume.expz = modo_volume.expz * fase_complexa
+
+        # Calcular campos
+        modo_volume.calcula_campos()
+
+        return modo_volume
+
+    def gerar_linhas_campo_magnetico(self, resolucao_volume=15, num_linhas=20,
+                                    comprimento_linha=50, fase_temporal=0):
+        """
+        Gera linhas de campo magnético dentro da cavidade.
+
+        Parameters:
+        -----------
+        resolucao_volume : int
+            Resolução da malha volumétrica
+        num_linhas : int
+            Número de linhas de campo a gerar
+        comprimento_linha : int
+            Número máximo de pontos por linha
+        fase_temporal : float
+            Fase temporal em radianos
+
+        Returns:
+        --------
+        list : Lista de arrays com coordenadas das linhas de campo
+        """
+        # Obter campos volumétricos
+        modo_volume = self._criar_modo_volumetrico_3d(resolucao_volume, fase_temporal)
+
+        # Coordenadas e campos
+        X, Y, Z = modo_volume.x, modo_volume.y, modo_volume.z
+        Hx, Hy, Hz = modo_volume.Hx, modo_volume.Hy, modo_volume.Hz
+
+        # Converter dimensões
+        largura_m = self.largura / 1000
+        altura_m = self.altura / 1000
+        profundidade_m = self.profundidade / 1000
+
+        # Criar pontos de partida para as linhas de campo
+        # Distribuir pontos de forma uniforme no volume
+        np.random.seed(42)  # Para reprodutibilidade
+        start_points = []
+
+        # Pontos distribuídos em diferentes planos
+        for i in range(num_linhas):
+            if i < num_linhas // 3:  # 1/3 perto do início em Z
+                z_start = 0.1 * profundidade_m
+            elif i < 2 * num_linhas // 3:  # 1/3 no meio em Z
+                z_start = 0.5 * profundidade_m
+            else:  # 1/3 perto do fim em Z
+                z_start = 0.9 * profundidade_m
+
+            x_start = np.random.uniform(0.1 * largura_m, 0.9 * largura_m)
+            y_start = np.random.uniform(0.1 * altura_m, 0.9 * altura_m)
+            start_points.append([x_start, y_start, z_start])
+
+        linhas_campo = []
+
+        for start_point in start_points:
+            linha = self._integrar_linha_campo(
+                start_point, X, Y, Z, Hx, Hy, Hz,
+                comprimento_linha, largura_m, altura_m, profundidade_m
+            )
+            if len(linha) > 2:  # Só adicionar se a linha tem pontos suficientes
+                linhas_campo.append(np.array(linha))
+
+        return linhas_campo
+
+    def gerar_linhas_campo_eletrico(self, resolucao_volume=15, num_linhas=20,
+                                   comprimento_linha=50, fase_temporal=0):
+        """
+        Gera linhas de campo elétrico dentro da cavidade.
+
+        Parameters e Returns são os mesmos de gerar_linhas_campo_magnetico()
+        """
+        # Obter campos volumétricos
+        modo_volume = self._criar_modo_volumetrico_3d(resolucao_volume, fase_temporal)
+
+        # Coordenadas e campos
+        X, Y, Z = modo_volume.x, modo_volume.y, modo_volume.z
+        Ex, Ey, Ez = modo_volume.Ex, modo_volume.Ey, modo_volume.Ez
+
+        # Converter dimensões
+        largura_m = self.largura / 1000
+        altura_m = self.altura / 1000
+        profundidade_m = self.profundidade / 1000
+
+        # Criar pontos de partida para as linhas de campo
+        np.random.seed(42)  # Para reprodutibilidade
+        start_points = []
+
+        for i in range(num_linhas):
+            if i < num_linhas // 3:
+                z_start = 0.1 * profundidade_m
+            elif i < 2 * num_linhas // 3:
+                z_start = 0.5 * profundidade_m
+            else:
+                z_start = 0.9 * profundidade_m
+
+            x_start = np.random.uniform(0.1 * largura_m, 0.9 * largura_m)
+            y_start = np.random.uniform(0.1 * altura_m, 0.9 * altura_m)
+            start_points.append([x_start, y_start, z_start])
+
+        linhas_campo = []
+
+        for start_point in start_points:
+            linha = self._integrar_linha_campo(
+                start_point, X, Y, Z, Ex, Ey, Ez,
+                comprimento_linha, largura_m, altura_m, profundidade_m
+            )
+            if len(linha) > 2:
+                linhas_campo.append(np.array(linha))
+
+        return linhas_campo
+
+    def _integrar_linha_campo(self, start_point, X, Y, Z, Fx, Fy, Fz,
+                             max_pontos, largura_m, altura_m, profundidade_m):
+        """
+        Integra uma linha de campo usando o método de Euler.
+
+        Parameters:
+        -----------
+        start_point : list
+            Ponto inicial [x, y, z]
+        X, Y, Z : arrays
+            Malhas de coordenadas
+        Fx, Fy, Fz : arrays
+            Componentes do campo vetorial
+        max_pontos : int
+            Número máximo de pontos na linha
+        largura_m, altura_m, profundidade_m : float
+            Dimensões da cavidade em metros
+
+        Returns:
+        --------
+        list : Lista de pontos da linha de campo
+        """
+        from scipy.interpolate import RegularGridInterpolator
+
+        # Criar interpoladores para cada componente do campo
+        x_coords = X[:, 0, 0]
+        y_coords = Y[0, :, 0]
+        z_coords = Z[0, 0, :]
+
+        interp_fx = RegularGridInterpolator((x_coords, y_coords, z_coords), Fx,
+                                           bounds_error=False, fill_value=0)
+        interp_fy = RegularGridInterpolator((x_coords, y_coords, z_coords), Fy,
+                                           bounds_error=False, fill_value=0)
+        interp_fz = RegularGridInterpolator((x_coords, y_coords, z_coords), Fz,
+                                           bounds_error=False, fill_value=0)
+
+        # Parâmetros de integração
+        dt = min(largura_m, altura_m, profundidade_m) / 100  # Passo de integração
+        linha = [start_point.copy()]
+        ponto_atual = np.array(start_point)
+
+        for _ in range(max_pontos):
+            # Interpolar campo no ponto atual
+            try:
+                fx = interp_fx(ponto_atual)[0] if ponto_atual.ndim == 1 else interp_fx(ponto_atual)
+                fy = interp_fy(ponto_atual)[0] if ponto_atual.ndim == 1 else interp_fy(ponto_atual)
+                fz = interp_fz(ponto_atual)[0] if ponto_atual.ndim == 1 else interp_fz(ponto_atual)
+            except:
+                break
+
+            # Calcular magnitude do campo
+            magnitude = np.sqrt(fx**2 + fy**2 + fz**2)
+
+            # Parar se o campo é muito fraco
+            if magnitude < 1e-10:
+                break
+
+            # Normalizar direção do campo
+            direcao = np.array([fx, fy, fz]) / magnitude
+
+            # Próximo ponto usando Euler
+            proximo_ponto = ponto_atual + dt * direcao
+
+            # Verificar se ainda está dentro da cavidade
+            if (proximo_ponto[0] < 0 or proximo_ponto[0] > largura_m or
+                proximo_ponto[1] < 0 or proximo_ponto[1] > altura_m or
+                proximo_ponto[2] < 0 or proximo_ponto[2] > profundidade_m):
+                break
+
+            linha.append(proximo_ponto.copy())
+            ponto_atual = proximo_ponto
+
+        return linha
+
+    def plota_cavidade_com_linhas_campo(self, campo='magnetico', num_linhas=15,
+                                       resolucao_volume=12, fase_temporal=0,
+                                       mostrar_paredes=True, alpha_paredes=0.3):
+        """
+        Plota cavidade 3D com linhas de campo internas e paredes.
+
+        Parameters:
+        -----------
+        campo : str
+            Tipo de campo ('magnetico' ou 'eletrico')
+        num_linhas : int
+            Número de linhas de campo
+        resolucao_volume : int
+            Resolução da malha volumétrica
+        fase_temporal : float
+            Fase temporal em radianos
+        mostrar_paredes : bool
+            Se deve mostrar as paredes da cavidade
+        alpha_paredes : float
+            Transparência das paredes
+
+        Returns:
+        --------
+        fig : matplotlib.figure.Figure
+            Figura 3D
+        """
+        fig = plt.figure(figsize=(15, 12))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Converter dimensões
+        largura_m = self.largura / 1000
+        altura_m = self.altura / 1000
+        profundidade_m = self.profundidade / 1000
+
+        # Gerar linhas de campo
+        if campo == 'magnetico':
+            linhas = self.gerar_linhas_campo_magnetico(
+                resolucao_volume, num_linhas, 50, fase_temporal
+            )
+            cor_linhas = 'blue'
+            titulo_campo = 'Magnético'
+        else:
+            linhas = self.gerar_linhas_campo_eletrico(
+                resolucao_volume, num_linhas, 50, fase_temporal
+            )
+            cor_linhas = 'red'
+            titulo_campo = 'Elétrico'
+
+        # Plotar linhas de campo
+        for linha in linhas:
+            if len(linha) > 1:
+                linha = np.array(linha)
+                ax.plot(linha[:, 0], linha[:, 1], linha[:, 2],
+                       color=cor_linhas, linewidth=1.5, alpha=0.8)
+
+        # Plotar paredes da cavidade se solicitado
+        if mostrar_paredes:
+            intensidades = self._calcular_intensidades_paredes(campo, 'total', 'x')
+
+            # Plotar paredes com transparência
+            self._plotar_parede_xy_frontal_alpha(ax, intensidades['xy_frontal'],
+                                                largura_m, altura_m, 0, alpha_paredes)
+            self._plotar_parede_xy_traseira_alpha(ax, intensidades['xy_traseira'],
+                                                 largura_m, altura_m, profundidade_m, alpha_paredes)
+            self._plotar_parede_xz_inferior_alpha(ax, intensidades['xz_inferior'],
+                                                 largura_m, profundidade_m, 0, alpha_paredes)
+            self._plotar_parede_xz_superior_alpha(ax, intensidades['xz_superior'],
+                                                 largura_m, profundidade_m, altura_m, alpha_paredes)
+            self._plotar_parede_yz_esquerda_alpha(ax, intensidades['yz_esquerda'],
+                                                 altura_m, profundidade_m, 0, alpha_paredes)
+            self._plotar_parede_yz_direita_alpha(ax, intensidades['yz_direita'],
+                                                altura_m, profundidade_m, largura_m, alpha_paredes)
+
+        # Adicionar bordas da cavidade
+        self._adicionar_bordas_cavidade(ax, largura_m, altura_m, profundidade_m)
+
+        # Configurações do plot
+        ax.set_xlabel('X (m)')
+        ax.set_ylabel('Z (m)')
+        ax.set_zlabel('Y (m)')
+        ax.set_title(f'Cavidade 3D - Linhas de Campo {titulo_campo} - Modo TE{self.m}{self.n}\n'
+                    f'Fase: {fase_temporal:.2f} rad')
+
+        # Configurar limites e aspecto
+        ax.set_xlim(0, largura_m)
+        ax.set_ylim(0, profundidade_m)
+        ax.set_zlim(0, altura_m)
+
+        # Aspecto proporcional
+        ax.set_box_aspect([largura_m, profundidade_m, altura_m])
+        ax.view_init(elev=20, azim=45)
+        ax.grid(True, alpha=0.3)
+
+        return fig
+
+    def _plotar_parede_xy_frontal_alpha(self, ax, intensidade, largura, altura, z_pos, alpha):
+        """Plota parede frontal com transparência."""
+        x = np.linspace(0, largura, intensidade.shape[0])
+        y = np.linspace(0, altura, intensidade.shape[1])
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        Z = np.full_like(X, z_pos)
+        ax.plot_surface(X, Z, Y, facecolors=plt.cm.viridis(intensidade/intensidade.max()),
+                       alpha=alpha, shade=False)
+
+    def _plotar_parede_xy_traseira_alpha(self, ax, intensidade, largura, altura, z_pos, alpha):
+        """Plota parede traseira com transparência."""
+        x = np.linspace(0, largura, intensidade.shape[0])
+        y = np.linspace(0, altura, intensidade.shape[1])
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        Z = np.full_like(X, z_pos)
+        ax.plot_surface(X, Z, Y, facecolors=plt.cm.viridis(intensidade/intensidade.max()),
+                       alpha=alpha, shade=False)
+
+    def _plotar_parede_xz_inferior_alpha(self, ax, intensidade, largura, profundidade, y_pos, alpha):
+        """Plota parede inferior com transparência."""
+        x = np.linspace(0, largura, intensidade.shape[0])
+        z = np.linspace(0, profundidade, intensidade.shape[1])
+        X, Z = np.meshgrid(x, z, indexing='ij')
+        Y = np.full_like(X, y_pos)
+        ax.plot_surface(X, Z, Y, facecolors=plt.cm.viridis(intensidade/intensidade.max()),
+                       alpha=alpha, shade=False)
+
+    def _plotar_parede_xz_superior_alpha(self, ax, intensidade, largura, profundidade, y_pos, alpha):
+        """Plota parede superior com transparência."""
+        x = np.linspace(0, largura, intensidade.shape[0])
+        z = np.linspace(0, profundidade, intensidade.shape[1])
+        X, Z = np.meshgrid(x, z, indexing='ij')
+        Y = np.full_like(X, y_pos)
+        ax.plot_surface(X, Z, Y, facecolors=plt.cm.viridis(intensidade/intensidade.max()),
+                       alpha=alpha, shade=False)
+
+    def _plotar_parede_yz_esquerda_alpha(self, ax, intensidade, altura, profundidade, x_pos, alpha):
+        """Plota parede esquerda com transparência."""
+        y = np.linspace(0, altura, intensidade.shape[0])
+        z = np.linspace(0, profundidade, intensidade.shape[1])
+        Y, Z = np.meshgrid(y, z, indexing='ij')
+        X = np.full_like(Y, x_pos)
+        ax.plot_surface(X, Z, Y, facecolors=plt.cm.viridis(intensidade/intensidade.max()),
+                       alpha=alpha, shade=False)
+
+    def _plotar_parede_yz_direita_alpha(self, ax, intensidade, altura, profundidade, x_pos, alpha):
+        """Plota parede direita com transparência."""
+        y = np.linspace(0, altura, intensidade.shape[0])
+        z = np.linspace(0, profundidade, intensidade.shape[1])
+        Y, Z = np.meshgrid(y, z, indexing='ij')
+        X = np.full_like(Y, x_pos)
+        ax.plot_surface(X, Z, Y, facecolors=plt.cm.viridis(intensidade/intensidade.max()),
+                       alpha=alpha, shade=False)
+
+    def gerar_gifs_varredura(self, output_dir='gifs_retangulares',
+                            campos=['magnetico', 'eletrico'],
+                            lista_m=[1, 2, 3],
+                            lista_n=[0, 1, 2],
+                            tipos_modo=['TE'],
+                            tipo_intensidade='direcional',
+                            direcao_vetor='z',
+                            num_frames=30,
+                            width=800,
+                            height=600,
+                            fps=5,
+                            pular_existentes=True):
+        """
+        Gera GIFs para todas as combinações de parâmetros especificadas.
+
+        Parameters:
+        -----------
+        output_dir : str
+            Diretório onde os GIFs serão salvos
+        campos : list
+            Lista de campos a varrer (ex: ['magnetico', 'eletrico'])
+        lista_m : list
+            Lista de valores m a varrer (ex: [1, 2, 3])
+        lista_n : list
+            Lista de valores n a varrer (ex: [0, 1, 2])
+        tipos_modo : list
+            Lista de tipos de modo a varrer (ex: ['TE', 'TM'])
+        tipo_intensidade : str
+            Tipo de intensidade ('total', 'perpendicular', 'direcional')
+        direcao_vetor : str
+            Direção do vetor ('x', 'y', 'z')
+        num_frames : int
+            Número de frames por GIF
+        width : int
+            Largura em pixels
+        height : int
+            Altura em pixels
+        fps : int
+            Frames por segundo
+        pular_existentes : bool
+            Se True, pula GIFs que já existem
+
+        Returns:
+        --------
+        dict
+            Dicionário com estatísticas da varredura
+        """
+        import os
+        import time
+
+        # Criar diretório de saída se não existir
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            print(f"[INFO] Diretorio criado: {output_dir}")
+
+        # Contar total de combinações incluindo tipos de modo
+        total_combinacoes = len(tipos_modo) * len(campos) * len(lista_m) * len(lista_n)
+        print(f"\n{'='*60}")
+        print(f"INICIANDO VARREDURA DE GIFS - CAVIDADE RETANGULAR")
+        print(f"{'='*60}")
+        print(f"Total de combinacoes: {total_combinacoes}")
+        print(f"Modos: {tipos_modo}")
+        print(f"Campos: {campos}")
+        print(f"M: {lista_m}")
+        print(f"N: {lista_n}")
+        print(f"{'='*60}\n")
+
+        # Estatísticas
+        stats = {
+            'total': total_combinacoes,
+            'gerados': 0,
+            'pulados': 0,
+            'erros': 0,
+            'tempo_total': 0,
+            'arquivos': []
+        }
+
+        contador = 0
+        tempo_inicio_total = time.time()
+
+        # Loop sobre todas as combinações incluindo tipos de modo
+        for tipo_modo in tipos_modo:
+            for campo in campos:
+                for m in lista_m:
+                    for n in lista_n:
+                        contador += 1
+
+                        # Nome do arquivo
+                        nome_arquivo = f'rect_{tipo_modo}{m}{n}_{campo}_{tipo_intensidade}.gif'
+                        caminho_completo = os.path.join(output_dir, nome_arquivo)
+
+                        # Verificar se já existe
+                        if pular_existentes and os.path.exists(caminho_completo):
+                            print(f"[{contador}/{total_combinacoes}] SKIP - Pulando (ja existe): {nome_arquivo}")
+                            stats['pulados'] += 1
+                            continue
+
+                        # Criar nova instância com os parâmetros atuais
+                        try:
+                            print(f"\n[{contador}/{total_combinacoes}] Gerando: {nome_arquivo}")
+                            print(f"   Modo: {tipo_modo}{m}{n} | Campo: {campo}")
+
+                            tempo_inicio = time.time()
+
+                            # Criar nova instância com m, n e tipo_modo atualizados
+                            cavity_temp = CavityWall3D(
+                                largura=self.largura,
+                                altura=self.altura,
+                                profundidade=self.profundidade,
+                                frequencia=self.frequencia,
+                                permissividade=self.permissividade,
+                                permeabilidade=self.permeabilidade,
+                                resolucao=self.resolucao,
+                                m=m,
+                                n=n,
+                                tipo_modo=tipo_modo
+                            )
+
+                            # Gerar GIF
+                            cavity_temp.criar_gif_plotly(
+                                nome_arquivo=caminho_completo,
+                                campo=campo,
+                                tipo_intensidade=tipo_intensidade,
+                                direcao_vetor=direcao_vetor,
+                                num_frames=num_frames,
+                                width=width,
+                                height=height,
+                                fps=fps
+                            )
+
+                            tempo_decorrido = time.time() - tempo_inicio
+                            stats['gerados'] += 1
+                            stats['arquivos'].append(caminho_completo)
+
+                            print(f"   [OK] Concluido em {tempo_decorrido:.1f}s")
+
+                        except Exception as e:
+                            print(f"   [ERRO] Erro: {str(e)}")
+                            stats['erros'] += 1
+                            import traceback
+                            traceback.print_exc()
+                            continue
+
+        # Tempo total
+        stats['tempo_total'] = time.time() - tempo_inicio_total
+
+        # Relatório final
+        print(f"\n{'='*60}")
+        print(f"RELATORIO FINAL")
+        print(f"{'='*60}")
+        print(f"GIFs gerados: {stats['gerados']}")
+        print(f"GIFs pulados: {stats['pulados']}")
+        print(f"Erros: {stats['erros']}")
+        print(f"Tempo total: {stats['tempo_total']/60:.1f} minutos")
+        if stats['gerados'] > 0:
+            print(f"Tempo medio por GIF: {stats['tempo_total']/stats['gerados']:.1f}s")
+        print(f"Diretorio: {output_dir}")
+        print(f"{'='*60}\n")
+
+        return stats
+
 
 if __name__ == "__main__":
-    # Criar instância da cavidade 3D com modo específico
-    cavidade = CavityWall3D(largura=22.86, altura=10.16, profundidade=100,
-                           frequencia=12*10**9, permissividade=1, permeabilidade=1,
-                           resolucao=40, m=1, n=2)  # Modo TE11
+    # Criar instância base da cavidade 3D
+    cavidade = CavityWall3D(
+        largura=10.7,
+        altura=4.3,
+        profundidade=50,
+        frequencia=9.4*10**9,
+        permissividade=2.08,
+        permeabilidade=1,
+        resolucao=40,
+        m=1,  # Será substituído na varredura
+        n=0   # Será substituído na varredura
+    )
 
-    # Debug das dimensões
-    # cavidade.debug_dimensoes()
+    # ========================================================================
+    # OPÇÃO 1: VARREDURA COMPLETA - Gera GIFs para todas as combinações
+    # ========================================================================
+    print("\nVARREDURA COMPLETA DE GIFS - CAVIDADE RETANGULAR")
+    print("Isso vai gerar GIFs para todas as combinacoes de:")
+    print("  - Modos: TE, TM")
+    print("  - Campos: magnetico, eletrico")
+    print("  - M: 1, 2, 3")
+    print("  - N: 0, 1, 2")
+    print("Total: 2 × 2 × 3 × 3 = 36 GIFs\n")
 
-    # Exemplos de uso com diferentes modos:
+    stats = cavidade.gerar_gifs_varredura(
+        output_dir='gifs_retangulares',
+        campos=['magnetico', 'eletrico'],
+        lista_m=[1, 2, 3],
+        lista_n=[0, 1, 2],
+        tipos_modo=['TE', 'TM'],  # Ambos os modos TE e TM
+        tipo_intensidade='total',
+        direcao_vetor='z',
+        num_frames=48,
+        width=800,
+        height=600,
+        fps=24,
+        pular_existentes=True  # Pula GIFs já existentes
+    )
 
-    # 1. Imagens estáticas (comentadas para focar na animação)
-    # fig1 = cavidade.plota_cavidade_3d_com_intensidade(campo='magnetico', tipo_intensidade='total')
-    # fig2 = cavidade.plota_cavidade_3d_com_intensidade(campo='magnetico', tipo_intensidade='perpendicular')
-    # fig3 = cavidade.plota_cavidade_3d_com_intensidade(campo='magnetico', tipo_intensidade='direcional', direcao_vetor='z')
+    # ========================================================================
+    # OPÇÃO 2: GIF ÚNICO - Cria apenas um GIF específico
+    # ========================================================================
+    # m = 1
+    # n = 0
+    # campo = 'magnetico'
+    #
+    # cavity_single = CavityWall3D(
+    #     largura=22.86,
+    #     altura=10.16,
+    #     profundidade=100,
+    #     frequencia=2*10**9,
+    #     permissividade=1,
+    #     permeabilidade=3,
+    #     resolucao=40,
+    #     m=m,
+    #     n=n
+    # )
+    #
+    # cavity_single.criar_gif_plotly(
+    #     nome_arquivo=f'animacao_TE{m}{n}_{campo}.gif',
+    #     campo=campo,
+    #     tipo_intensidade='direcional',
+    #     direcao_vetor='z',
+    #     num_frames=30,
+    #     width=800,
+    #     height=600,
+    #     fps=5
+    # )
 
-    # 2. ANIMAÇÃO 3D MATPLOTLIB (mais pesada - comentada)
-    # ani_3d = cavidade.animar_cavidade_3d(campo='eletrico', tipo_intensidade='direcional', direcao_vetor='y', num_frames=20, duracao_ciclo=20.0)
-
-    # 3. ANIMAÇÃO 2D (LEVE) - Evolução temporal com pyplot (comentada)
-    # ani = cavidade.animar_cavidade_pyplot(campo='magnetico', tipo_intensidade='direcional', direcao_vetor='x', num_frames=60, duracao_ciclo=3.0)
-
-    # 4. ANIMAÇÃO 3D PLOTLY - INTERATIVA E EFICIENTE! (comentada)
+    # ========================================================================
+    # OPÇÃO 3: ANIMAÇÃO 3D PLOTLY INTERATIVA (HTML)
+    # ========================================================================
     # fig_plotly = cavidade.animar_cavidade_plotly(
     #     campo='magnetico',
     #     tipo_intensidade='direcional',
     #     direcao_vetor='z',
-    #     num_frames=30,          # Menos frames para Plotly
-    #     duracao_frame=200       # 200ms por frame
+    #     num_frames=60,
+    #     duracao_frame=100
     # )
     # fig_plotly.write_html('animacao_3d_interativa.html')
-    # fig_plotly.show()
+    # print("✅ Animação HTML salva como: animacao_3d_interativa.html")
 
-    # 5. CRIAR GIF DA ANIMAÇÃO PLOTLY - MELHOR QUALIDADE!
-    gif_path = cavidade.criar_gif_plotly(
-        nome_arquivo='animacao_plotly_3d.gif',
-        campo='magnetico',
-        tipo_intensidade='direcional',
-        direcao_vetor='z',
-        num_frames=60,          # Frames para GIF
-        width=1000,             # Largura em pixels
-        height=800,             # Altura em pixels
-        fps=20                  # 60 frames por segundo
-    )
+    # ========================================================================
+    # OPÇÃO 4: ANIMAÇÃO 3D MATPLOTLIB (mais pesada)
+    # ========================================================================
+    # ani_3d = cavidade.animar_cavidade_3d(
+    #     campo='eletrico',
+    #     tipo_intensidade='direcional',
+    #     direcao_vetor='y',
+    #     num_frames=20,
+    #     duracao_ciclo=20.0
+    # )
+    # plt.show()
 
-    print(f"GIF criado: {gif_path}")
+    # ========================================================================
+    # OUTROS EXEMPLOS DISPONÍVEIS
+    # ========================================================================
 
-    # 6. ANIMAÇÃO COMPARANDO MÚLTIPLOS MODOS (comentada)
+    # 6. VISUALIZAÇÃO COM LINHAS DE CAMPO INTERNAS - NOVA FUNCIONALIDADE!
+    # print("\n=== GERANDO VISUALIZAÇÃO COM LINHAS DE CAMPO ===")
+
+    # # # Exemplo 1: Campo Magnético com paredes semitransparentes
+    # fig_magnetico = cavidade.plota_cavidade_com_linhas_campo(
+    #     campo='magnetico',
+    #     num_linhas=20,
+    #     resolucao_volume=12,
+    #     fase_temporal=0,
+    #     mostrar_paredes=True,
+    #     alpha_paredes=0.3
+    # )
+    # fig_magnetico.savefig('cavidade_linhas_campo_magnetico.png', dpi=300, bbox_inches='tight')
+    # print("Salvo: cavidade_linhas_campo_magnetico.png")
+
+    # # Exemplo 2: Campo Elétrico sem paredes (só linhas)
+    # fig_eletrico = cavidade.plota_cavidade_com_linhas_campo(
+    #     campo='eletrico',
+    #     num_linhas=15,
+    #     resolucao_volume=10,
+    #     fase_temporal=np.pi/4,  # Fase diferente
+    #     mostrar_paredes=False,
+    #     alpha_paredes=0.2
+    # )
+    # fig_eletrico.savefig('cavidade_linhas_campo_eletrico.png', dpi=300, bbox_inches='tight')
+    # print("Salvo: cavidade_linhas_campo_eletrico.png")
+
+    # 7. ANIMAÇÃO COMPARANDO MÚLTIPLOS MODOS (comentada)
     # modos_para_comparar = [(1,0), (2,0), (1,1), (2,1)]  # TE10, TE20, TE11, TE21
     # ani_multiplos = cavidade.animar_multiplos_modos(modos_lista=modos_para_comparar, campo='magnetico', tipo_intensidade='direcional', direcao_vetor='z', num_frames=60, duracao_ciclo=4.0)
 

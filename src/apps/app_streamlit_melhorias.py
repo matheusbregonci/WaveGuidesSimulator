@@ -1,9 +1,9 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from models.TEmn_model import Modo_TEmn
-from models.TMmn_model import Modo_TMmn
 from models.Cilindrico_model import Modo_Cilindrico
 import plotly.graph_objects as go
 import numpy as np
@@ -14,6 +14,23 @@ import io
 import base64
 import datetime
 from typing import Dict, Any
+import importlib.util
+import tempfile
+
+# Importar CavityWall3D
+spec = importlib.util.spec_from_file_location("cavity_model",
+    os.path.join(os.path.dirname(__file__), '..', 'models', '3d_cavity_wall_model.py'))
+cavity_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(cavity_module)
+CavityWall3D = cavity_module.CavityWall3D
+
+# Importar CylindricalCavityWall3D
+spec_cyl = importlib.util.spec_from_file_location("cylindrical_cavity_model",
+    os.path.join(os.path.dirname(__file__), '..', 'models', 'cylindrical_cavity_wall_model.py'))
+cylindrical_cavity_module = importlib.util.module_from_spec(spec_cyl)
+spec_cyl.loader.exec_module(cylindrical_cavity_module)
+CylindricalCavityWall3D = cylindrical_cavity_module.CylindricalCavityWall3D
+
 try:
     from reports.relatorio_pdf import gerar_relatorio_completo, capturar_matplotlib_como_base64, capturar_plotly_como_base64
     from utils.file_manager import file_manager
@@ -224,71 +241,14 @@ def coletar_dados_simulacao_retangular() -> Dict[str, Any]:
         'frequencia': TEmn.frequencia / 1e9,  # Hz para GHz
         'largura': TEmn.largura,
         'altura': TEmn.altura,
-        'permissividade': getattr(TEmn, 'mu', 1.0),  # CORRIGIDO
-        'permeabilidade': getattr(TEmn, 'epsilon', 1.0),  # CORRIGIDO
+        'permissividade': getattr(TEmn, 'mu', 1.0),       # CORRIGIDO: TEmn.mu armazena permissividade (código original trocado)
+        'permeabilidade': getattr(TEmn, 'epsilon', 1.0),  # CORRIGIDO: TEmn.epsilon armazena permeabilidade (código original trocado)
         'plano': TEmn.plano,
         'campo': campo,
         'componente': componente,
         'material': 'Material configurado',
         'imagens': {}
     }
-
-    # Adicionar dados de matriz de espalhamento se disponíveis
-    if 'scattering_data' in state:
-        scattering_data = state['scattering_data']
-
-        # Usar dados herdados da configuração principal
-        dados['scattering_data'] = {
-            'largura': TEmn.largura * 1000,  # m para mm
-            'altura': TEmn.altura * 1000,    # m para mm
-            'comprimento': scattering_data['config'].get('comprimento', 50.0),
-            'freq_min': max(0.1, (TEmn.frequencia/1e9) - 3.0),
-            'freq_max': (TEmn.frequencia/1e9) + 3.0,
-            'permissividade': getattr(TEmn, 'mu', 1.0),
-            'permeabilidade': getattr(TEmn, 'epsilon', 1.0),
-            'Q_factor': scattering_data['config'].get('q_factor', 1000)
-        }
-
-        dados['scattering'] = {
-            'disponivel': True,
-            'config': scattering_data['config'],
-            'S11': scattering_data['S11'],
-            'S21': scattering_data['S21'],
-            'frequencies': scattering_data['frequencies']
-        }
-
-        # Adicionar métricas calculadas
-        s11_db = 20*np.log10(np.abs(scattering_data['S11']))
-        s21_db = 20*np.log10(np.abs(scattering_data['S21']))
-
-        dados['scattering']['metricas'] = {
-            'melhor_casamento_db': float(np.min(s11_db)),
-            'freq_melhor_casamento': float(scattering_data['frequencies'][np.argmin(s11_db)]),
-            'melhor_transmissao_db': float(np.max(s21_db)),
-            'freq_melhor_transmissao': float(scattering_data['frequencies'][np.argmax(s21_db)])
-        }
-
-        # Adicionar frequências de ressonância se disponíveis
-        if 'scattering_object' in scattering_data:
-            scattering_obj = scattering_data['scattering_object']
-            freq_min_hz = dados['scattering_data']['freq_min'] * 1e9
-            freq_max_hz = dados['scattering_data']['freq_max'] * 1e9
-
-            dados['scattering_data']['frequencias_ressonancia'] = {}
-
-            # TE modes na faixa
-            for m, n in scattering_obj.modos_te:
-                f_res = scattering_obj.calcular_freq_ressonancia_te(m, n)
-                if freq_min_hz <= f_res <= freq_max_hz:
-                    dados['scattering_data']['frequencias_ressonancia'][f'TE{m}{n}'] = f_res / 1e9
-
-            # TM modes na faixa
-            for m, n in scattering_obj.modos_tm:
-                f_res = scattering_obj.calcular_freq_ressonancia_tm(m, n)
-                if freq_min_hz <= f_res <= freq_max_hz:
-                    dados['scattering_data']['frequencias_ressonancia'][f'TM{m}{n}'] = f_res / 1e9
-    else:
-        dados['scattering'] = {'disponivel': False}
 
     return dados
 
@@ -352,28 +312,8 @@ def capturar_graficos_retangular(TEmn, campo, componente) -> Dict[str, str]:
 
             plt.close(fig_vetorial)
 
-        # Capturar gráfico de matriz de espalhamento se disponível
-        if 'scattering_data' in state:
-            with st.spinner("Capturando análise de matriz de espalhamento..."):
-                try:
-                    scattering_object = state['scattering_data']['scattering_object']
-                    fig_scattering = scattering_object.plot_s_parameters_matplotlib()
-
-                    if RELATORIO_DISPONIVEL:
-                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                        temp_filename = file_manager.get_temp_path(f"matriz_espalhamento_{timestamp}.png")
-                        fig_scattering.savefig(temp_filename, dpi=150, bbox_inches='tight',
-                                             facecolor='white', edgecolor='none', format='png')
-
-                        imagens['Matriz de Espalhamento - Parâmetros S'] = {'tipo': 'arquivo', 'caminho': str(temp_filename)}
-
-                    plt.close(fig_scattering)
-
-                except Exception as e_scatter:
-                    imagens['Erro Matriz Espalhamento'] = f"Erro na captura da matriz S: {str(e_scatter)}"
-
         # Adicionar nota informativa
-        imagens['Nota'] = "Gráficos 3D interativos e análises adicionais disponíveis na interface web"
+        imagens['Nota'] = "Gráficos 3D interativos disponíveis na interface web"
 
     except Exception as e:
         st.error(f"Erro ao capturar gráficos: {e}")
@@ -948,17 +888,6 @@ def configuracao_parametros_retangular():
                     )
                     TEmn.calcula_campos()
                     state['TEmn'] = TEmn
-
-                    TMmn = Modo_TMmn(
-                        largura=largura_guia,
-                        altura=altura_guia,
-                        frequencia=frequencia_onda * 1e9,
-                        permissividade=permissividade_meio,
-                        permeabilidade=permeabilidade_meio,
-                        plano=plano
-                    )
-                    TMmn.calcula_campos()
-                    state['TMmn'] = TMmn
                     st.session_state.step = 2
                     st.markdown("""
                     <div class="custom-success">
@@ -987,60 +916,45 @@ def simulacao_retangular():
             st.rerun()
         return
 
-    # Seletor de modo
-    st.markdown("**🔧 Escolha do Modo de Simulação**")
-    modo_selecionado = st.selectbox(
-        "Selecione o modo:",
-        ["TE (Transverse Electric)", "TM (Transverse Magnetic)"],
-        key="modo_simulacao"
-    )
-
-    # Determinar qual objeto usar baseado na seleção
-    if "TE" in modo_selecionado:
-        modo_obj = state['TEmn']
-        modo_nome = "TE"
-    else:
-        modo_obj = state['TMmn']
-        modo_nome = "TM"
-
     # Criar abas para diferentes tipos de visualização
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Campo 3D Interativo", "Campo 2D", "Campo Vetorial", "Análise", "Matriz de Espalhamento"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Campo 3D Interativo", "Campo 2D", "Campo Vetorial", "Animação 3D Cavidade", "Análise"])
 
     with tab1:
+        TEmn = state['TEmn']
         campo, componente = state['campo_componente']
 
-        st.markdown(f"**Visualização 3D Interativa do Campo - Modo {modo_nome}**")
+        st.markdown("**Visualização 3D Interativa do Campo**")
 
         if st.button("🌍 Gerar Visualização 3D", use_container_width=True):
             with st.spinner("Gerando visualização 3D..."):
                 # Obter os dados do campo
-                modo_obj.calcula_campos()
+                TEmn.calcula_campos()
                 if campo == 'magnetico':
                     if componente == 'x':
-                        imagem = modo_obj.Hx
+                        imagem = TEmn.Hx
                     elif componente == 'y':
-                        imagem = modo_obj.Hy
+                        imagem = TEmn.Hy
                     elif componente == 'z':
-                        imagem = modo_obj.Hz
+                        imagem = TEmn.Hz
                 elif campo == 'eletrico':
                     if componente == 'x':
-                        imagem = modo_obj.Ex
+                        imagem = TEmn.Ex
                     elif componente == 'y':
-                        imagem = modo_obj.Ey
+                        imagem = TEmn.Ey
                     elif componente == 'z':
-                        imagem = modo_obj.Ez
+                        imagem = TEmn.Ez
 
                 # Criar o gráfico 3D interativo melhorado
                 fig = go.Figure(data=[go.Surface(
                     z=imagem,
-                    x=modo_obj.x[:, 0],
-                    y=modo_obj.y[0, :],
+                    x=TEmn.x[:, 0],
+                    y=TEmn.y[0, :],
                     colorscale='Viridis',
                     showscale=True
                 )])
 
                 fig.update_layout(
-                    title=f"Modo {modo_nome} - Campo {campo.capitalize()} - Componente {componente.upper()}",
+                    title=f"Campo {campo.capitalize()} - Componente {componente.upper()}",
                     scene=dict(
                         xaxis_title="Posição X (mm)",
                         yaxis_title="Posição Y (mm)",
@@ -1059,13 +973,14 @@ def simulacao_retangular():
                 """, unsafe_allow_html=True)
 
     with tab2:
+        TEmn = state['TEmn']
         campo, componente = state['campo_componente']
 
-        st.markdown(f"**Visualização 2D da Intensidade do Campo - Modo {modo_nome}**")
+        st.markdown("**Visualização 2D da Intensidade do Campo**")
 
         if st.button("🗺️ Gerar Mapa 2D", use_container_width=True):
             with st.spinner("Gerando mapa 2D..."):
-                fig = modo_obj.plot3DField(campo=campo, componente=componente)
+                fig = TEmn.plot3DField(campo=campo, componente=componente)
                 st.pyplot(fig)
                 plt.close(fig)
 
@@ -1076,13 +991,14 @@ def simulacao_retangular():
                 """, unsafe_allow_html=True)
 
     with tab3:
+        TEmn = state['TEmn']
         campo, componente = state['campo_componente']
 
-        st.markdown(f"**Visualização Vetorial do Campo - Modo {modo_nome}**")
+        st.markdown("**Visualização Vetorial do Campo**")
 
         if st.button("➡️ Gerar Campo Vetorial", use_container_width=True):
             with st.spinner("Gerando campo vetorial..."):
-                fig = modo_obj.plota_campo_vetorial(campo)
+                fig = TEmn.plota_campo_vetorial(campo)
                 st.pyplot(fig)
                 plt.close(fig)
 
@@ -1093,9 +1009,171 @@ def simulacao_retangular():
                 """, unsafe_allow_html=True)
 
     with tab4:
-        st.markdown(f"**Análise dos Resultados - Modo {modo_nome}**")
+        st.markdown("**Animação 3D da Cavidade - Visualização nas Paredes**")
+        st.write("Esta visualização mostra a intensidade do campo nas paredes da cavidade tridimensional.")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            campo_cavidade = st.selectbox("Campo (Cavidade)", ["magnetico", "eletrico"], key="campo_cavidade")
+            tipo_intensidade = st.selectbox(
+                "Tipo de Intensidade",
+                ["direcional", "total", "perpendicular"],
+                key="tipo_intensidade",
+                help="Direcional: componente específica | Total: magnitude total | Perpendicular: componente perpendicular à parede"
+            )
+
+        with col2:
+            direcao_vetor = st.selectbox(
+                "Direção do Vetor",
+                ["x", "y", "z"],
+                key="direcao_vetor",
+                help="Direção da componente quando tipo_intensidade='direcional'"
+            )
+            resolucao_cavidade = st.slider(
+                "Resolução",
+                min_value=10,
+                max_value=50,
+                value=25,
+                step=5,
+                key="resolucao_cavidade",
+                help="Número de pontos por dimensão (valores menores = mais rápido)"
+            )
+
+        col3, col4 = st.columns(2)
+
+        with col3:
+            num_frames = st.slider(
+                "Número de Frames",
+                min_value=10,
+                max_value=100,
+                value=60,
+                step=10,
+                key="num_frames",
+                help="Número de frames na animação"
+            )
+
+        with col4:
+            duracao_frame = st.slider(
+                "Duração do Frame (ms)",
+                min_value=50,
+                max_value=500,
+                value=100,
+                step=50,
+                key="duracao_frame",
+                help="Duração de cada frame em milissegundos"
+            )
+
+        profundidade_cavidade = st.number_input(
+            "Profundidade da Cavidade (mm)",
+            value=100.0,
+            step=10.0,
+            key="profundidade_cavidade",
+            help="Profundidade da cavidade na direção Z"
+        )
+
+        if st.button("🎬 Gerar Animação 3D da Cavidade", use_container_width=True):
+            if 'TEmn' not in state:
+                st.markdown("""
+                <div class="custom-warning">
+                    ⚠️ <strong>Configuração não encontrada.</strong> Por favor, volte à etapa anterior.
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                with st.spinner("Gerando animação 3D da cavidade... Isso pode levar alguns instantes."):
+                    try:
+                        # Recuperar parâmetros do state
+                        TEmn = state['TEmn']
+                        largura_guia = TEmn.largura
+                        altura_guia = TEmn.altura
+                        frequencia_onda = TEmn.frequencia / 1e9
+                        permissividade_meio = getattr(TEmn, 'mu', 1.0)
+                        permeabilidade_meio = getattr(TEmn, 'epsilon', 1.0)
+
+                        # Criar instância da CavityWall3D
+                        cavity = CavityWall3D(
+                            largura=largura_guia,
+                            altura=altura_guia,
+                            profundidade=profundidade_cavidade/1000,
+                            frequencia=frequencia_onda * 1e9,
+                            permissividade=permissividade_meio,
+                            permeabilidade=permeabilidade_meio,
+                            resolucao=resolucao_cavidade,
+                            m=1,  # Modo m
+                            n=0   # Modo n
+                        )
+
+                        # Gerar a animação
+                        fig = cavity.animar_cavidade_plotly(
+                            campo=campo_cavidade,
+                            tipo_intensidade=tipo_intensidade,
+                            direcao_vetor=direcao_vetor,
+                            num_frames=num_frames,
+                            duracao_frame=duracao_frame
+                        )
+
+                        # Salvar como HTML em arquivo temporário
+                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        html_filename = f'animacao_retangular_3d_{timestamp}.html'
+                        html_path = os.path.join(tempfile.gettempdir(), html_filename)
+                        fig.write_html(html_path)
+
+                        # Ler o HTML gerado e salvar no session_state
+                        with open(html_path, 'r', encoding='utf-8') as f:
+                            html_string = f.read()
+
+                        # Salvar no session_state para persistir entre reruns
+                        st.session_state['html_retangular'] = html_string
+                        st.session_state['html_path_retangular'] = html_path
+                        st.session_state['html_filename_retangular'] = html_filename
+
+                    except Exception as e:
+                        st.markdown(f"""
+                        <div class="custom-warning">
+                            ⚠️ <strong>Erro ao gerar animação 3D da cavidade:</strong> {str(e)}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        import traceback
+                        st.code(traceback.format_exc())
+
+        # Exibir animação se existir no session_state
+        if 'html_retangular' in st.session_state:
+            # Exibir a animação incorporada com opção de maximizar
+            col_title, col_maximize = st.columns([3, 1])
+            with col_title:
+                st.markdown("### Visualização Interativa 3D")
+            with col_maximize:
+                maximizar = st.checkbox("🔍 Maximizar", key="maximizar_retangular")
+
+            # Ajustar altura baseado na opção de maximizar
+            altura_viz = 1200 if maximizar else 700
+            components.html(st.session_state['html_retangular'], height=altura_viz, scrolling=False)
+
+            st.markdown("""
+            <div class="custom-success">
+                ✅ <strong>Animação 3D da cavidade gerada com sucesso!</strong> Use os controles para explorar.
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Botão para download do HTML
+            col_download1, col_download2 = st.columns([1, 3])
+            with col_download1:
+                with open(st.session_state['html_path_retangular'], 'rb') as f:
+                    st.download_button(
+                        label="💾 Baixar HTML",
+                        data=f.read(),
+                        file_name=st.session_state['html_filename_retangular'],
+                        mime='text/html',
+                        use_container_width=True
+                    )
+            with col_download2:
+                st.info(f"📄 Arquivo salvo temporariamente em: `{st.session_state['html_path_retangular']}`")
+
+    with tab5:
+        st.markdown("**Análise dos Resultados**")
 
         # Mostrar informações sobre os parâmetros calculados
+        TEmn = state['TEmn']
 
         col1, col2 = st.columns(2)
 
@@ -1106,9 +1184,9 @@ def simulacao_retangular():
             </div>
             """, unsafe_allow_html=True)
 
-            st.write(f"• **Frequência:** {modo_obj.frequencia/1e9:.2f} GHz")
-            st.write(f"• **Largura:** {modo_obj.largura:.2f} mm")
-            st.write(f"• **Altura:** {modo_obj.altura:.2f} mm")
+            st.write(f"• **Frequência:** {TEmn.frequencia/1e9:.2f} GHz")
+            st.write(f"• **Largura:** {TEmn.largura:.2f} mm")
+            st.write(f"• **Altura:** {TEmn.altura:.2f} mm")
 
         with col2:
             st.markdown("""
@@ -1119,8 +1197,7 @@ def simulacao_retangular():
 
             st.write(f"• **Campo:** {campo.capitalize()}")
             st.write(f"• **Componente:** {componente.upper()}")
-            st.write(f"• **Plano:** {modo_obj.plano.upper()}")
-            st.write(f"• **Modo:** {modo_nome}")
+            st.write(f"• **Plano:** {TEmn.plano.upper()}")
 
         # Seção de Relatório PDF
         st.markdown("---")
@@ -1143,259 +1220,6 @@ def simulacao_retangular():
                     gerar_relatorio_pdf("retangular")
                 else:
                     st.error("📦 Para usar relatórios, instale: pip install reportlab plotly-kaleido")
-
-    with tab5:
-        st.markdown(f"**📊 Matriz de Espalhamento - Análise de Parâmetros S - Modo {modo_nome}**")
-
-        # Informações sobre a análise
-        st.markdown("""
-        <div style="background: #f0f8ff; padding: 1rem; border-radius: 8px; border-left: 4px solid #2E86AB; margin-bottom: 1rem;">
-            <h6 style="color: #2E86AB; margin: 0 0 0.5rem 0;">ℹ️ Sobre a Matriz de Espalhamento</h6>
-            <p style="margin: 0; color: #666;">
-            A matriz de espalhamento (parâmetros S) descreve como a energia eletromagnética é
-            refletida e transmitida em dispositivos de microondas. S₁₁ representa reflexão,
-            S₂₁ representa transmissão.
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Configurações herdadas da simulação principal
-        st.markdown("**⚙️ Parâmetros Herdados da Configuração**")
-
-        # Recuperar parâmetros dos dados de configuração armazenados
-        largura_mm = float(modo_obj.largura * 1000)
-        altura_mm = float(modo_obj.altura * 1000)
-        freq_ghz = modo_obj.frequencia / 1e9
-        permissividade = getattr(modo_obj, 'mu', 1.0)
-        permeabilidade = getattr(modo_obj, 'epsilon', 1.0)
-
-        # Calcular faixa de frequência automática baseada na frequência atual
-        freq_min = max(0.1, freq_ghz - 3.0)
-        freq_max = freq_ghz + 3.0
-
-        # Mostrar os parâmetros herdados
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.markdown(f"""
-            <div style="background: #e8f5e8; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #28a745;">
-                <strong>📏 Largura:</strong> {largura_mm:.2f} mm<br/>
-                <strong>📐 Altura:</strong> {altura_mm:.2f} mm
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col2:
-            st.markdown(f"""
-            <div style="background: #e3f2fd; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #2196f3;">
-                <strong>📡 Frequência Central:</strong> {freq_ghz:.2f} GHz<br/>
-                <strong>📊 Faixa:</strong> {freq_min:.1f} - {freq_max:.1f} GHz
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col3:
-            st.markdown(f"""
-            <div style="background: #fff3e0; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #ff9800;">
-                <strong>⚡ Permissividade (εᵣ):</strong> {permissividade:.2f}<br/>
-                <strong>🧲 Permeabilidade (μᵣ):</strong> {permeabilidade:.2f}
-            </div>
-            """, unsafe_allow_html=True)
-
-        # Configurações adicionais personalizáveis
-        st.markdown("**🔧 Configurações Adicionais**")
-
-        col4, col5 = st.columns(2)
-
-        with col4:
-            comprimento_mm = st.number_input(
-                "Comprimento da Cavidade (mm)",
-                value=50.0,
-                min_value=10.0,
-                max_value=200.0,
-                step=1.0,
-                help="Dimensão c da cavidade (profundidade) - não definida na simulação principal"
-            )
-
-        with col5:
-            q_factor = st.number_input(
-                "Fator Q",
-                value=1000,
-                min_value=100,
-                max_value=10000,
-                step=100,
-                help="Qualidade do ressonador (Q maior = menos perdas)"
-            )
-
-        # Validação
-        if freq_min >= freq_max:
-            st.error("❌ Frequência mínima deve ser menor que a máxima!")
-            return
-
-        # Botão para gerar análise
-        if st.button("🔍 Gerar Análise de Matriz de Espalhamento", use_container_width=True, type="primary"):
-
-            try:
-                # Importar o modelo
-                sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'models'))
-                from Scattering_model import ScatteringMatrix
-
-                with st.spinner("Calculando matriz de espalhamento..."):
-
-                    # Criar instância do modelo usando parâmetros herdados
-                    scattering = ScatteringMatrix(
-                        largura=largura_mm,
-                        altura=altura_mm,
-                        comprimento=comprimento_mm,
-                        permissividade=permissividade,
-                        permeabilidade=permeabilidade,
-                        freq_min=freq_min,
-                        freq_max=freq_max,
-                        num_pontos=500
-                    )
-                    scattering.Q_factor = q_factor
-
-                    # Calcular parâmetros S
-                    S11, S12, S21, S22 = scattering.calcular_matriz_s()
-                    freq_ghz = scattering.frequencies / 1e9
-
-                    # Armazenar no estado para o relatório
-                    state['scattering_data'] = {
-                        'scattering_object': scattering,
-                        'S11': S11, 'S12': S12, 'S21': S21, 'S22': S22,
-                        'frequencies': freq_ghz,
-                        'config': {
-                            'largura': largura_mm,
-                            'altura': altura_mm,
-                            'comprimento': comprimento_mm,
-                            'freq_min': freq_min,
-                            'freq_max': freq_max,
-                            'q_factor': q_factor
-                        }
-                    }
-
-                    # Mostrar resultados principais
-                    st.success("✅ Análise concluída!")
-
-                    # Métricas importantes
-                    col1, col2, col3, col4 = st.columns(4)
-
-                    with col1:
-                        s11_db = 20*np.log10(np.abs(S11))
-                        min_s11 = np.min(s11_db)
-                        min_freq = freq_ghz[np.argmin(s11_db)]
-                        st.metric("Melhor Casamento", f"{min_s11:.1f} dB", f"@ {min_freq:.2f} GHz")
-
-                    with col2:
-                        s21_db = 20*np.log10(np.abs(S21))
-                        max_s21 = np.max(s21_db)
-                        max_freq = freq_ghz[np.argmax(s21_db)]
-                        st.metric("Melhor Transmissão", f"{max_s21:.1f} dB", f"@ {max_freq:.2f} GHz")
-
-                    with col3:
-                        # Frequências de ressonância TE na faixa
-                        resonances_te = []
-                        for m, n in scattering.modos_te:
-                            f_res = scattering.calcular_freq_ressonancia_te(m, n)
-                            if freq_min*1e9 <= f_res <= freq_max*1e9:
-                                resonances_te.append(f_res/1e9)
-                        st.metric("Ressonâncias TE", len(resonances_te), "na faixa")
-
-                    with col4:
-                        # Frequências de ressonância TM na faixa
-                        resonances_tm = []
-                        for m, n in scattering.modos_tm:
-                            f_res = scattering.calcular_freq_ressonancia_tm(m, n)
-                            if freq_min*1e9 <= f_res <= freq_max*1e9:
-                                resonances_tm.append(f_res/1e9)
-                        st.metric("Ressonâncias TM", len(resonances_tm), "na faixa")
-
-                    # Gráfico principal usando Plotly
-                    try:
-                        fig_plotly = scattering.plot_s_parameters_plotly()
-                        st.plotly_chart(fig_plotly, use_container_width=True)
-
-                        # Armazenar figura para relatório
-                        state['scattering_data']['figure_plotly'] = fig_plotly
-
-                    except Exception as e:
-                        st.error(f"Erro ao gerar gráfico Plotly: {e}")
-
-                        # Fallback para matplotlib
-                        try:
-                            fig_mpl = scattering.plot_s_parameters_matplotlib()
-                            st.pyplot(fig_mpl, use_container_width=True)
-                            plt.close(fig_mpl)
-
-                            # Armazenar figura para relatório
-                            state['scattering_data']['figure_matplotlib'] = fig_mpl
-
-                        except Exception as e2:
-                            st.error(f"Erro ao gerar gráfico matplotlib: {e2}")
-
-                    # Tabela de frequências de ressonância
-                    if resonances_te or resonances_tm:
-                        st.markdown("**🎯 Frequências de Ressonância Identificadas**")
-
-                        col1, col2 = st.columns(2)
-
-                        with col1:
-                            if resonances_te:
-                                st.markdown("**Modos TE:**")
-                                te_data = []
-                                for i, (m, n) in enumerate(scattering.modos_te):
-                                    f_res = scattering.calcular_freq_ressonancia_te(m, n)
-                                    if freq_min*1e9 <= f_res <= freq_max*1e9:
-                                        te_data.append({
-                                            "Modo": f"TE{m}{n}",
-                                            "Frequência": f"{f_res/1e9:.3f} GHz"
-                                        })
-                                if te_data:
-                                    st.dataframe(te_data, use_container_width=True)
-
-                        with col2:
-                            if resonances_tm:
-                                st.markdown("**Modos TM:**")
-                                tm_data = []
-                                for i, (m, n) in enumerate(scattering.modos_tm):
-                                    f_res = scattering.calcular_freq_ressonancia_tm(m, n)
-                                    if freq_min*1e9 <= f_res <= freq_max*1e9:
-                                        tm_data.append({
-                                            "Modo": f"TM{m}{n}",
-                                            "Frequência": f"{f_res/1e9:.3f} GHz"
-                                        })
-                                if tm_data:
-                                    st.dataframe(tm_data, use_container_width=True)
-
-                    # Opção de download dos dados
-                    if st.button("💾 Exportar Dados CSV", use_container_width=True):
-                        try:
-                            import pandas as pd
-                            data = {
-                                'Frequency_GHz': freq_ghz,
-                                'S11_magnitude_dB': 20*np.log10(np.abs(S11)),
-                                'S11_phase_deg': np.angle(S11)*180/np.pi,
-                                'S21_magnitude_dB': 20*np.log10(np.abs(S21)),
-                                'S21_phase_deg': np.angle(S21)*180/np.pi
-                            }
-                            df = pd.DataFrame(data)
-                            csv = df.to_csv(index=False)
-
-                            st.download_button(
-                                label="📥 Download CSV",
-                                data=csv,
-                                file_name=f"parametros_s_{freq_min:.0f}-{freq_max:.0f}GHz.csv",
-                                mime="text/csv",
-                                use_container_width=True
-                            )
-                        except ImportError:
-                            st.error("Pandas não disponível para exportação")
-
-            except ImportError:
-                st.error("❌ Modelo de matriz de espalhamento não encontrado!")
-                st.markdown("""
-                **Solução:** Certifique-se de que o arquivo `Scattering_model.py` está em `src/models/`
-                """)
-            except Exception as e:
-                st.error(f"❌ Erro durante análise: {str(e)}")
 
     # Botões de navegação
     st.markdown("---")
@@ -1681,7 +1505,7 @@ def simulacao_cilindrica():
         return
 
     # Criar abas para diferentes tipos de visualização
-    tab1, tab2, tab3, tab4 = st.tabs(["Campo 3D Vetorial", "Animação de Fase", "Matriz de Espalhamento", "Análise"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Campo 3D Vetorial", "Animação de Fase", "Animação 3D Cavidade", "Coeficientes S", "Análise"])
 
     with tab1:
         cilindrico = state['cilindro']
@@ -1857,255 +1681,187 @@ def simulacao_cilindrica():
                     """, unsafe_allow_html=True)
 
     with tab3:
-        st.markdown("**Análise da Matriz de Espalhamento - Guia Cilíndrica**")
-        st.write("Análise completa dos parâmetros S (reflexão e transmissão) para guias de onda cilíndricas.")
+        st.markdown("**Animação 3D da Cavidade Cilíndrica - Visualização nas Paredes**")
+        st.write("Esta visualização mostra a intensidade do campo nas superfícies da cavidade cilíndrica (tampas e superfície lateral).")
 
-        # Configurações da análise
         col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown("""
-            <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 4px solid #007BFF;">
-                <h6 style="color: #007BFF; margin: 0 0 0.5rem 0;">⚙️ Configurações da Análise</h6>
-            </div>
-            """, unsafe_allow_html=True)
-
-            freq_min_cyl = st.number_input("Frequência Mínima (GHz)", value=6.0, min_value=1.0, max_value=50.0, step=0.5, key="freq_min_cyl")
-            freq_max_cyl = st.number_input("Frequência Máxima (GHz)", value=18.0, min_value=1.0, max_value=50.0, step=0.5, key="freq_max_cyl")
-            comprimento_guia = st.number_input("Comprimento da Guia (mm)", value=100.0, min_value=10.0, max_value=500.0, step=10.0, key="comp_guia_cyl")
+            modo_cavidade_cyl = st.selectbox("Modo (Cavidade Cilíndrica)", ["TE", "TM"], key="modo_cavidade_cyl")
+            campo_cavidade_cyl = st.selectbox("Campo (Cavidade Cilíndrica)", ["magnetico", "eletrico"], key="campo_cavidade_cyl")
 
         with col2:
+            tipo_intensidade_cyl = st.selectbox(
+                "Tipo de Intensidade",
+                ["total", "perpendicular", "direcional"],
+                key="tipo_intensidade_cyl",
+                help="Total: magnitude total | Perpendicular: componente perpendicular à superfície | Direcional: componente específica"
+            )
+            direcao_vetor_cyl = st.selectbox(
+                "Direção do Vetor",
+                ["rho", "phi", "z"],
+                key="direcao_vetor_cyl",
+                help="Direção da componente quando tipo_intensidade='direcional'"
+            )
+
+        col3, col4 = st.columns(2)
+
+        with col3:
+            resolucao_cavidade_cyl = st.slider(
+                "Resolução",
+                min_value=10,
+                max_value=50,
+                value=25,
+                step=5,
+                key="resolucao_cavidade_cyl",
+                help="Número de pontos por dimensão (valores menores = mais rápido)"
+            )
+            num_frames_cyl = st.slider(
+                "Número de Frames",
+                min_value=10,
+                max_value=100,
+                value=60,
+                step=10,
+                key="num_frames_cyl",
+                help="Número de frames na animação"
+            )
+
+        with col4:
+            duracao_frame_cyl = st.slider(
+                "Duração do Frame (ms)",
+                min_value=50,
+                max_value=500,
+                value=100,
+                step=50,
+                key="duracao_frame_cyl",
+                help="Duração de cada frame em milissegundos"
+            )
+            profundidade_cavidade_cyl = st.number_input(
+                "Profundidade da Cavidade (mm)",
+                value=100.0,
+                step=10.0,
+                key="profundidade_cavidade_cyl",
+                help="Profundidade (comprimento) da cavidade cilíndrica na direção Z"
+            )
+
+        if st.button("🎬 Gerar Animação 3D da Cavidade Cilíndrica", use_container_width=True):
+            if 'cilindro' not in state:
+                st.markdown("""
+                <div class="custom-warning">
+                    ⚠️ <strong>Configuração não encontrada.</strong> Por favor, volte à etapa anterior.
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                with st.spinner("Gerando animação 3D da cavidade cilíndrica... Isso pode levar alguns instantes."):
+                    try:
+                        # Recuperar parâmetros do state
+                        cilindrico = state['cilindro']
+                        raio_mm = cilindrico.raio * 1000  # m -> mm
+                        frequencia = cilindrico.frequencia
+                        modo_m, modo_n = state['modo_m'], state['modo_n']
+                        permissividade_val = state.get('permissividade_original', 1.0)
+                        permeabilidade_val = state.get('permeabilidade_original', 1.0)
+
+                        # Criar instância da CylindricalCavityWall3D
+                        cavity_cyl = CylindricalCavityWall3D(
+                            raio=raio_mm,
+                            profundidade=profundidade_cavidade_cyl,
+                            frequencia=frequencia,
+                            permissividade=permissividade_val,
+                            permeabilidade=permeabilidade_val,
+                            resolucao=resolucao_cavidade_cyl,
+                            m=modo_m,
+                            n=modo_n
+                        )
+
+                        # Gerar a animação
+                        fig = cavity_cyl.animar_cavidade_plotly(
+                            modo=modo_cavidade_cyl,
+                            campo=campo_cavidade_cyl,
+                            tipo_intensidade=tipo_intensidade_cyl,
+                            direcao_vetor=direcao_vetor_cyl,
+                            num_frames=num_frames_cyl,
+                            duracao_frame=duracao_frame_cyl
+                        )
+
+                        # Salvar como HTML em arquivo temporário
+                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        html_filename = f'animacao_cilindrica_3d_{timestamp}.html'
+                        html_path = os.path.join(tempfile.gettempdir(), html_filename)
+                        fig.write_html(html_path)
+
+                        # Ler o HTML gerado e salvar no session_state
+                        with open(html_path, 'r', encoding='utf-8') as f:
+                            html_string = f.read()
+
+                        # Salvar no session_state para persistir entre reruns
+                        st.session_state['html_cilindrico'] = html_string
+                        st.session_state['html_path_cilindrico'] = html_path
+                        st.session_state['html_filename_cilindrico'] = html_filename
+
+                    except Exception as e:
+                        st.markdown(f"""
+                        <div class="custom-warning">
+                            ⚠️ <strong>Erro ao gerar animação 3D da cavidade cilíndrica:</strong> {str(e)}
+                        </div>
+                        """, unsafe_allow_html=True)
+                        import traceback
+                        st.code(traceback.format_exc())
+
+        # Exibir animação se existir no session_state
+        if 'html_cilindrico' in st.session_state:
+            # Exibir a animação incorporada com opção de maximizar
+            col_title, col_maximize = st.columns([3, 1])
+            with col_title:
+                st.markdown("### Visualização Interativa 3D")
+            with col_maximize:
+                maximizar = st.checkbox("🔍 Maximizar", key="maximizar_cilindrico")
+
+            # Ajustar altura baseado na opção de maximizar
+            altura_viz = 1200 if maximizar else 700
+            components.html(st.session_state['html_cilindrico'], height=altura_viz, scrolling=False)
+
             st.markdown("""
-            <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; border-left: 4px solid #28A745;">
-                <h6 style="color: #28A745; margin: 0 0 0.5rem 0;">📊 Parâmetros da Simulação</h6>
+            <div class="custom-success">
+                ✅ <strong>Animação 3D da cavidade cilíndrica gerada com sucesso!</strong> Use os controles para explorar.
             </div>
             """, unsafe_allow_html=True)
 
-            cilindrico = state['cilindro']
-            st.write(f"**Raio:** {cilindrico.raio*1000:.2f} mm")
-            st.write(f"**Frequência Atual:** {cilindrico.frequencia/1e9:.2f} GHz")
-            st.write(f"**Modo:** TE₀₁ (dominante)")
-            st.write(f"**Material:** εᵣ={cilindrico.epsilon}, μᵣ={cilindrico.mu}")
-
-        if st.button("📈 Calcular Matriz de Espalhamento", use_container_width=True, type="primary", key="calc_scattering_cyl"):
-            with st.spinner("Calculando matriz de espalhamento cilíndrica..."):
-                try:
-                    # Importar o modelo de matriz de espalhamento cilíndrica
-                    import sys
-                    import os
-                    sys.path.append(os.path.join(os.getcwd(), 'src'))
-                    from models.Cylindrical_Scattering_model import CylindricalScatteringMatrix
-
-                    # Criar instância da matriz de espalhamento
-                    cyl_scattering = CylindricalScatteringMatrix(
-                        raio=cilindrico.raio,
-                        comprimento=comprimento_guia/1000.0,  # converter mm para m
-                        permissividade=cilindrico.epsilon,
-                        permeabilidade=cilindrico.mu,
-                        freq_min=freq_min_cyl,
-                        freq_max=freq_max_cyl,
-                        num_pontos=300
+            # Botão para download do HTML
+            col_download1, col_download2 = st.columns([1, 3])
+            with col_download1:
+                with open(st.session_state['html_path_cilindrico'], 'rb') as f:
+                    st.download_button(
+                        label="💾 Baixar HTML",
+                        data=f.read(),
+                        file_name=st.session_state['html_filename_cilindrico'],
+                        mime='text/html',
+                        use_container_width=True
                     )
-
-                    # Calcular matriz S
-                    S11, S12, S21, S22 = cyl_scattering.calcular_matriz_s()
-                    frequencies_ghz = cyl_scattering.frequencies / 1e9
-
-                    # Gerar gráfico
-                    fig = cyl_scattering.plot_s_parameters_comparison()
-                    st.plotly_chart(fig, use_container_width=True)
-
-                    # Análise estatística
-                    st.markdown("---")
-                    st.markdown("**📊 Análise Estatística dos Parâmetros S**")
-
-                    col1, col2, col3, col4 = st.columns(4)
-
-                    with col1:
-                        st.metric("**|S11| Médio**", f"{np.mean(np.abs(S11)):.3f}",
-                                 delta=f"{np.std(np.abs(S11)):.3f} (σ)")
-
-                    with col2:
-                        st.metric("**|S21| Médio**", f"{np.mean(np.abs(S21)):.3f}",
-                                 delta=f"{np.std(np.abs(S21)):.3f} (σ)")
-
-                    with col3:
-                        energia_media = np.mean(np.abs(S11)**2 + np.abs(S21)**2)
-                        st.metric("**Conservação Energia**", f"{energia_media:.3f}",
-                                 delta="✅" if energia_media <= 1.01 else "⚠️")
-
-                    with col4:
-                        freq_teste = cilindrico.frequencia
-                        S11_atual = cyl_scattering.calcular_s11(freq_teste)
-                        st.metric("**|S11| Atual**", f"{abs(S11_atual):.3f}",
-                                 delta=f"{20*np.log10(abs(S11_atual)):.1f} dB")
-
-                    # Frequências de corte
-                    st.markdown("**🎯 Frequências de Corte dos Modos**")
-
-                    modos_info = []
-                    for n, m in [(0,1), (1,1), (0,2), (2,1), (3,1)]:
-                        try:
-                            f_c_te = cyl_scattering.calcular_freq_corte_te(n, m)
-                            f_c_tm = cyl_scattering.calcular_freq_corte_tm(n, m)
-                            modos_info.append({
-                                'Modo TE': f"TE₍{n}{m}₎",
-                                'Freq. Corte TE (GHz)': f"{f_c_te/1e9:.2f}",
-                                'Modo TM': f"TM₍{n}{m}₎",
-                                'Freq. Corte TM (GHz)': f"{f_c_tm/1e9:.2f}"
-                            })
-                        except:
-                            continue
-
-                    if modos_info:
-                        import pandas as pd
-                        df_modos = pd.DataFrame(modos_info)
-                        st.dataframe(df_modos, use_container_width=True)
-
-                    # Análise por frequência específica
-                    st.markdown("**🔍 Análise em Frequência Específica**")
-                    freq_analise = st.slider("Frequência para Análise (GHz)",
-                                            float(freq_min_cyl), float(freq_max_cyl),
-                                            float(cilindrico.frequencia/1e9), 0.1, key="freq_analise_cyl")
-
-                    freq_analise_hz = freq_analise * 1e9
-                    S11_freq = cyl_scattering.calcular_s11(freq_analise_hz)
-                    S21_freq = cyl_scattering.calcular_s21(freq_analise_hz)
-
-                    col1, col2, col3 = st.columns(3)
-
-                    with col1:
-                        st.markdown(f"""
-                        **Reflexão (S11)**
-                        - Magnitude: {abs(S11_freq):.3f}
-                        - Fase: {np.angle(S11_freq)*180/np.pi:.1f}°
-                        - dB: {20*np.log10(abs(S11_freq)):.1f} dB
-                        """)
-
-                    with col2:
-                        st.markdown(f"""
-                        **Transmissão (S21)**
-                        - Magnitude: {abs(S21_freq):.3f}
-                        - Fase: {np.angle(S21_freq)*180/np.pi:.1f}°
-                        - dB: {20*np.log10(abs(S21_freq)):.1f} dB
-                        """)
-
-                    with col3:
-                        energia_freq = abs(S11_freq)**2 + abs(S21_freq)**2
-                        vswr = (1 + abs(S11_freq)) / (1 - abs(S11_freq)) if abs(S11_freq) < 1 else float('inf')
-                        st.markdown(f"""
-                        **Análise**
-                        - Energia Total: {energia_freq:.3f}
-                        - VSWR: {vswr:.2f}
-                        - Status: {"✅ OK" if energia_freq <= 1.01 else "⚠️ Revisar"}
-                        """)
-
-                    # Carta de Smith interativa
-                    st.markdown("**🎯 Carta de Smith - Trajetória S11**")
-
-                    # Criar carta de Smith com Plotly
-                    fig_smith = go.Figure()
-
-                    # Círculo unitário
-                    theta = np.linspace(0, 2*np.pi, 200)
-                    fig_smith.add_trace(go.Scatter(
-                        x=np.cos(theta), y=np.sin(theta),
-                        mode='lines', name='Círculo Unitário',
-                        line=dict(color='black', width=2),
-                        showlegend=False
-                    ))
-
-                    # Círculos de resistência constante
-                    r_values = [0.2, 0.5, 1.0, 2.0, 5.0]
-                    for r in r_values:
-                        center_x = r / (1 + r)
-                        radius = 1 / (1 + r)
-                        circle_theta = np.linspace(0, 2*np.pi, 100)
-                        x_circle = center_x + radius * np.cos(circle_theta)
-                        y_circle = radius * np.sin(circle_theta)
-
-                        mask = x_circle**2 + y_circle**2 <= 1.001
-                        fig_smith.add_trace(go.Scatter(
-                            x=x_circle[mask], y=y_circle[mask],
-                            mode='lines', name=f'R={r}',
-                            line=dict(color='gray', width=0.5),
-                            showlegend=False, hoverinfo='skip'
-                        ))
-
-                    # Trajetória S11
-                    fig_smith.add_trace(go.Scatter(
-                        x=np.real(S11), y=np.imag(S11),
-                        mode='lines+markers', name='S11',
-                        line=dict(color='blue', width=3),
-                        marker=dict(size=3),
-                        customdata=frequencies_ghz,
-                        hovertemplate='S11<br>Real: %{x:.3f}<br>Imag: %{y:.3f}<br>Freq: %{customdata:.1f} GHz<extra></extra>'
-                    ))
-
-                    # Pontos inicial e final
-                    fig_smith.add_trace(go.Scatter(
-                        x=[np.real(S11)[0]], y=[np.imag(S11)[0]],
-                        mode='markers', name='Início',
-                        marker=dict(color='green', size=10, symbol='circle')
-                    ))
-                    fig_smith.add_trace(go.Scatter(
-                        x=[np.real(S11)[-1]], y=[np.imag(S11)[-1]],
-                        mode='markers', name='Fim',
-                        marker=dict(color='red', size=10, symbol='circle')
-                    ))
-
-                    fig_smith.update_layout(
-                        title="Carta de Smith - Parâmetro S11",
-                        xaxis=dict(range=[-1.1, 1.1], constrain='domain'),
-                        yaxis=dict(range=[-1.1, 1.1], scaleanchor="x", scaleratio=1),
-                        width=600, height=600,
-                        showlegend=True
-                    )
-
-                    st.plotly_chart(fig_smith, use_container_width=True)
-
-                    # Comparação com modelo teórico
-                    st.markdown("**⚖️ Validação Teórica**")
-
-                    try:
-                        # Comparar com Modo_Cilindrico
-                        cyl_scattering.comparar_com_cilindrico(freq_analise_hz, 0, 1)
-
-                        # Capturar a saída (simplified version)
-                        te01_cutoff = cyl_scattering.calcular_freq_corte_te(0, 1)
-
-                        validacao_info = f"""
-                        **Validação dos Resultados:**
-                        - Frequência de Corte TE₀₁: {te01_cutoff/1e9:.2f} GHz
-                        - Modo Dominante: {"✅ TE₀₁" if te01_cutoff < freq_analise_hz else "⚠️ Evanescente"}
-                        - Impedância Característica: Calculada segundo teoria de Bessel
-                        - Conservação de Energia: {"✅ Respeitada" if energia_media <= 1.01 else "⚠️ Verificar"}
-                        """
-
-                        st.markdown(validacao_info)
-
-                    except Exception as e:
-                        st.warning(f"Validação teórica: {str(e)}")
-
-                    st.markdown("""
-                    <div class="custom-success">
-                        ✅ <strong>Análise da Matriz de Espalhamento concluída!</strong>
-                        <br>• Parâmetros S calculados com base na teoria de guias cilíndricos
-                        <br>• Frequências de corte determinadas pelos zeros das funções de Bessel
-                        <br>• Carta de Smith mostra comportamento da impedância vs frequência
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                except Exception as e:
-                    st.markdown(f"""
-                    <div class="custom-warning">
-                        ⚠️ <strong>Erro na análise:</strong> {str(e)}
-                        <br>Verifique se todos os módulos estão instalados corretamente.
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.exception(e)
+            with col_download2:
+                st.info(f"📄 Arquivo salvo temporariamente em: `{st.session_state['html_path_cilindrico']}`")
 
     with tab4:
+        st.markdown("**Coeficientes S e Equações**")
+        st.write("As equações abaixo descrevem os campos elétricos e magnéticos na guia cilíndrica:")
+
+        # Equações LaTeX
+        st.latex(r"E_\rho(\rho, \phi, z) = -\frac{j \omega \mu}{k_c^2 \rho} \left[A \cos(n\phi) - B \sin(n\phi)\right] J_n(k_c \rho) e^{-j\beta z}")
+
+        st.code('''
+def TM_E_rho(self, rho, phi):
+    const = -1j*self.beta_val/(self.k_c_val_tm)
+    seno = self.seno_Nphi(phi)
+    cosseno = self.cosseno_Nphi(phi)
+    jv_n = self.jv_n(rho)
+    return np.real(const*(self.A*seno + self.B*cosseno)*jv_n*self.exp_z_val)
+        ''', language='python', line_numbers=True)
+
+        st.latex(r"E_\phi(\rho, \phi, z) = \frac{j \omega \mu}{k_c} \left[A \sin(n\phi) + B \cos(n\phi)\right] J_n'(k_c \rho) e^{-j\beta z}")
+        st.latex(r"H_\rho(\rho, \phi, z) = -\frac{j \beta}{k_c} \left[A \sin(n\phi) + B \cos(n\phi)\right] J_n'(k_c \rho) e^{-j\beta z}")
+        st.latex(r"H_\phi(\rho, \phi, z) = -\frac{j \beta n}{k_c^2 \rho} \left[A \cos(n\phi) - B \sin(n\phi)\right] J_n(k_c \rho) e^{-j\beta z}")
+
+    with tab5:
         st.markdown("**Análise dos Resultados**")
 
         cilindrico = state['cilindro']
