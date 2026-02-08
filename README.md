@@ -1,4 +1,4 @@
-# 🌊 Waveguide Simulator - Ambiente de Distribuição
+# Waveguide Simulator - Ambiente de Distribuição
 
 ## 📦 **Pacote Completo para Execução**
 
@@ -122,4 +122,4 @@ Para dúvidas ou problemas:
 3. Certifique-se de ter conexão à internet para instalar dependências
 
 ---
-**🌊 Simulador de Guias de Onda Eletromagnéticas**
+**Simulador de Guias de Onda Eletromagnéticas**
